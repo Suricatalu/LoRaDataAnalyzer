@@ -1,0 +1,293 @@
+/* WISE6610 Data Analyzer - Optimized CSS */
+/* Remove duplicate styles for better maintainability */
+
+/* CSS Variables Definition */
+:root {
+    --bg-primary: #121212;
+    --bg-secondary: #1e1e1e;
+    --bg-tertiary: #2a2a2a;
+    --bg-hover: #333;
+    --border-color: #444;
+    --border-light: #555;
+    --text-primary: #fff;
+    --text-secondary: #eee;
+    --text-muted: #aaa;
+    --text-disabled: #888;
+    --accent-primary: #0d6efd;
+    --accent-secondary: #0b5ed7;
+    --success-color: #51cf66;
+    --warning-color: #ffd43b;
+    --danger-color: #ff6b6b;
+    --info-color: #ff922b;
+}
+
+/* Base Styles */
+body {
+    font-family: Arial, sans-serif;
+    margin: 20px auto;
+    max-width: 1200px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    background-color: var(--bg-primary);
+    color: var(--text-secondary);
+    line-height: 1.6;
+}
+
+h1 {
+    color: var(--text-primary);
+    text-align: center;
+    margin-bottom: 15px;
+}
+
+/* Section Block Styles */
+section {
+    flex: none;
+    width: 100%;
+    background-color: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    padding: 20px;
+    margin: 16px auto;
+    border-radius: 8px;
+    box-sizing: border-box;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    transition: box-shadow 0.3s ease;
+}
+
+section:hover {
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+}
+
+/* Sector 1 - Chart Area */
+#sector1 {
+    height: 400px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 15px;
+    overflow: hidden;
+}
+
+#sector1 .controls-container {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    width: 100%;
+    gap: 20px;
+    flex-shrink: 0;
+    height: 60px; /* Fixed control height */
+    padding: 10px 0;
+}
+
+#sector1 label {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    color: var(--text-primary);
+    flex-shrink: 0;
+    white-space: nowrap;
+}
+
+#sector1 input[type="number"] {
+    padding: 8px 10px;
+    background-color: var(--bg-tertiary);
+    color: var(--text-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    width: 90px;
+    font-size: 14px;
+}
+
+#sector1 input[type="number"]:focus {
+    outline: none;
+    border-color: var(--accent-primary);
+    box-shadow: 0 0 5px rgba(13, 110, 253, 0.3);
+}
+
+#sector1 input[type="file"] {
+    padding: 8px 12px;
+    background-color: var(--bg-tertiary);
+    color: var(--text-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    flex-shrink: 0;
+    cursor: pointer;
+    font-size: 14px;
+}
+
+#sector1 input[type="file"]:hover {
+    border-color: var(--border-light);
+    background-color: var(--bg-hover);
+}
+
+.chart-container {
+    width: 100%;
+    height: calc(100% - 75px); /* Adjust for more accurate height calculation */
+    display: flex;
+    flex: 1;
+    min-height: 250px; /* Ensure minimum height */
+    position: relative;
+}
+
+.chart-container canvas {
+    width: 100% !important;
+    height: 100% !important;
+}
+
+/* Sector 2 - Table Area */
+#sector2 {
+    min-height: 400px;
+    max-height: 70vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden; /* Change to hidden, let DataTables handle scrolling */
+    position: relative;
+}
+
+/* Table Base Styles */
+#detailTable {
+    width: 100%;
+    border-collapse: collapse;
+    background-color: var(--bg-secondary);
+    color: var(--text-secondary);
+    border: 1px solid var(--border-color);
+}
+
+#detailTable th, 
+#detailTable td {
+    border: 1px solid var(--border-color);
+    padding: 8px;
+    text-align: left;
+}
+
+#detailTable th {
+    background-color: var(--border-color);
+    color: var(--text-primary);
+    font-weight: bold;
+}
+
+/* DataTables Base Styles */
+.dataTables_wrapper {
+    color: var(--text-secondary);
+    background-color: var(--bg-secondary);
+    width: 100% !important;
+}
+
+/* DataTables Table Styles */
+table.dataTable {
+    background-color: var(--bg-secondary);
+    color: var(--text-secondary);
+    width: 100% !important;
+}
+
+table.dataTable thead,
+table.dataTable tbody,
+table.dataTable tfoot {
+    width: 100% !important;
+}
+
+table.dataTable thead th {
+    background-color: var(--border-color) !important;
+    color: var(--text-primary) !important;
+    font-weight: bold;
+}
+
+table.dataTable tbody td {
+    background-color: var(--bg-secondary) !important;
+    color: var(--text-secondary) !important;
+}
+
+table.dataTable tbody tr:nth-child(even) td {
+    background-color: var(--bg-tertiary) !important;
+}
+
+table.dataTable tbody tr:hover td {
+    background-color: var(--bg-hover) !important;
+}
+
+/* Force override all table cell styles */
+table.dataTable td,
+table.dataTable th {
+    background-color: inherit !important;
+    color: inherit !important;
+}
+
+/* Fix possible fixed column issues */
+.dtfc-fixed-left {
+    background-color: var(--bg-secondary) !important;
+    color: var(--text-secondary) !important;
+}
+
+.dtfc-fixed-left th {
+    background-color: var(--border-color) !important;
+    color: var(--text-primary) !important;
+}
+
+.dataTables_length select,
+.dataTables_filter input {
+    background-color: var(--bg-tertiary);
+    color: var(--text-secondary);
+    border: 1px solid var(--border-color);
+    padding: 5px;
+}
+
+.dataTables_info {
+    color: var(--text-muted);
+}
+
+.dataTables_paginate .paginate_button {
+    background-color: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    color: var(--text-secondary);
+    padding: 5px 10px;
+    margin: 0 2px;
+}
+
+.dataTables_paginate .paginate_button:hover {
+    background-color: var(--bg-hover);
+}
+
+.dataTables_paginate .paginate_button.current {
+    background-color: var(--accent-primary);
+    color: var(--text-primary);
+}
+
+/* Responsive Adjustments */
+@media (max-width: 768px) {
+    body {
+        margin: 10px;
+        max-width: none;
+    }
+    
+    #sector1 {
+        height: auto;
+        min-height: 350px;
+        padding: 15px;
+    }
+    
+    #sector1 .controls-container {
+        flex-direction: column;
+        gap: 15px;
+        height: auto;
+        padding: 15px 0;
+    }
+    
+    #sector1 label {
+        width: 100%;
+        justify-content: space-between;
+    }
+    
+    #sector1 input[type="number"],
+    #sector1 input[type="file"] {
+        width: 150px;
+    }
+    
+    .chart-container {
+        height: 280px;
+        min-height: 280px;
+    }
+    
+    #sector2 {
+        padding: 15px;
+    }
+}

@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WISE-6610 Data Analyzer</title>
+    <link rel="stylesheet" href="assets/style.css">
+    <link rel="stylesheet" href="https://cdn.datatables.net/1.13.6/css/jquery.dataTables.min.css">
+    <link rel="stylesheet" href="https://cdn.datatables.net/fixedheader/3.4.0/css/fixedHeader.dataTables.min.css">
+    <link rel="stylesheet" href="https://cdn.datatables.net/fixedcolumns/4.3.0/css/fixedColumns.dataTables.min.css">
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
+    <script src="https://cdn.datatables.net/fixedheader/3.4.0/js/dataTables.fixedHeader.min.js"></script>
+    <script src="https://cdn.datatables.net/fixedcolumns/4.3.0/js/dataTables.fixedColumns.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- Modular JavaScript files -->
+    <script src="assets/data-processor.js"></script>
+    <script src="assets/chart-manager.js"></script>
+    <script src="assets/table-manager.js"></script>
+    <script src="assets/app-controller.js"></script>
+</head>
+<body>
+    <h1>WISE6610 Data Analyzer</h1>
+    
+    <!-- Sector 1: Bar Chart -->
+    <section id="sector1">
+        <div class="controls-container">
+            <label for="threshold">Loss Rate Threshold: <input type="number" id="threshold" value="0" min="0" max="100" step="0.1" /></label>
+            <input type="file" id="csvFile" accept=".csv" />
+        </div>
+        <div class='chart-container'><canvas id='barChart'></canvas></div>
+    </section>
+    <!-- Sector 2: Detail Table -->
+    <section id="sector2">
+        <table id="detailTable" class="display">
+        <thead>
+            <tr>
+            <!-- Headers will be dynamically updated by JavaScript -->
+            <th>Devname</th>
+            <th>Devaddr</th>
+            <th>Total</th>
+            <th>Expected</th>
+            <th>Lost</th>
+            <th>Loss Rate (%)</th>
+            </tr>
+        </thead>
+        <tbody>
+        </tbody>
+        </table>
+    </section>
+</body>
+</html>
