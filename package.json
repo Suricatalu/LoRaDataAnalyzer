@@ -1,0 +1,49 @@
+{
+  "name": "lora-data-analyzer",
+  "version": "1.0.0",
+  "description": "LoRa 數據解析器 - 支援 Advantech WISE 和 EVA 模組",
+  "main": "assets/lora-data-parser.js",
+  "scripts": {
+    "test": "node test-parser.js --batch",
+    "test:single": "node test-parser.js",
+    "test:performance": "node -e \"require('./test-parser.js').runPerformanceTest()\"",
+    "demo": "node -e \"console.log('請開啟 parser-test.html 查看網頁版演示')\"",
+    "help": "node test-parser.js --help"
+  },
+  "keywords": [
+    "lora",
+    "lorawan",
+    "advantech",
+    "wise",
+    "eva",
+    "iot",
+    "sensor",
+    "data-parser",
+    "hex-parser"
+  ],
+  "author": "Advantech",
+  "license": "MIT",
+  "engines": {
+    "node": ">=12.0.0"
+  },
+  "files": [
+    "assets/",
+    "test-parser.js",
+    "parser-test.html",
+    "API_USAGE.md",
+    "README.md"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Suricatalu/LoRaDataAnalyzer"
+  },
+  "bugs": {
+    "url": "https://github.com/Suricatalu/LoRaDataAnalyzer/issues"
+  },
+  "homepage": "https://github.com/Suricatalu/LoRaDataAnalyzer#readme",
+  "devDependencies": {},
+  "dependencies": {},
+  "bin": {
+    "lora-parser": "./test-parser.js"
+  }
+}

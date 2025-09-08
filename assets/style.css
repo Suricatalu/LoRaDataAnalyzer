@@ -25,7 +25,7 @@
 body {
     font-family: Arial, sans-serif;
     margin: 20px auto;
-    max-width: 1200px;
+    max-width: 1500px;
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -40,13 +40,225 @@ h1 {
     margin-bottom: 15px;
 }
 
+/* Header Styles */
+header {
+    font-size: 18px; /* 調整字體大小 */
+    word-wrap: break-word; /* 強制文字換行 */
+    word-break: break-word; /* 強制文字換行 */
+    max-width: 300px; /* 調整寬度 */
+    line-height: 1.5; /* 調整行高 */
+}
+
+/* File Upload Area Styles */
+.file-upload-area {
+    width: 100%;
+    margin: 5px 0;
+    padding-top: 0px;
+    padding-bottom: 5px;
+}
+
+.upload-zone {
+    position: relative;
+    border: 2px dashed var(--border-color);
+    border-radius: 12px;
+    padding: 12px 20px;
+    text-align: left;
+    background: var(--bg-primary);
+    transition: all 0.3s ease;
+    cursor: pointer;
+    min-height: 45px;
+    display: flex;
+    flex-direction: row;
+    justify-content: flex-start;
+    align-items: center;
+    gap: 12px;
+}
+
+.upload-zone:hover {
+    border-color: var(--accent-primary);
+    background: var(--bg-tertiary);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(13, 110, 253, 0.1);
+}
+
+.upload-zone.drag-over {
+    border-color: var(--accent-primary);
+    background: var(--bg-tertiary);
+    border-style: solid;
+    box-shadow: 0 0 20px rgba(13, 110, 253, 0.2);
+    transform: scale(1.02);
+}
+
+.upload-icon {
+    font-size: 24px;
+    margin: 0;
+    opacity: 0.7;
+    transition: all 0.3s ease;
+    flex-shrink: 0;
+}
+
+.upload-zone:hover .upload-icon {
+    opacity: 1;
+    transform: scale(1.1);
+}
+
+.upload-text {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    flex: 1;
+}
+
+.upload-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin: 0;
+}
+
+.upload-subtitle {
+    font-size: 11px;
+    color: var(--text-muted);
+    margin: 0;
+}
+
+.upload-formats {
+    font-size: 11px;
+    color: var(--text-disabled);
+    background: var(--bg-secondary);
+    padding: 3px 10px;
+    border-radius: 20px;
+    border: 1px solid var(--border-color);
+    flex-shrink: 0;
+    white-space: nowrap;
+}
+
+.upload-help {
+    flex-shrink: 0;
+    margin-left: auto;
+}
+
+/* File Info Display */
+.file-info {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 14px;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    margin-top: 8px;
+    animation: slideIn 0.3s ease;
+}
+
+@keyframes slideIn {
+    from {
+        opacity: 0;
+        transform: translateY(-10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.file-name {
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-right: 10px;
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.file-size {
+    font-size: 13px;
+    color: var(--text-muted);
+    margin-right: 10px;
+}
+
+.remove-file-btn {
+    background: var(--danger-color);
+    color: white;
+    border: none;
+    border-radius: 50%;
+    width: 24px;
+    height: 24px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    font-weight: bold;
+    transition: all 0.2s ease;
+}
+
+.remove-file-btn:hover {
+    background: #e74c3c;
+    transform: scale(1.1);
+}
+
+/* Success state for upload zone */
+.upload-zone.file-selected {
+    border-color: var(--success-color);
+    background: rgba(81, 207, 102, 0.1);
+}
+
+.upload-zone.file-selected .upload-icon {
+    color: var(--success-color);
+}
+
+.upload-zone.file-selected .upload-title {
+    color: var(--success-color);
+}
+
+/* Error state for upload zone */
+.upload-zone.upload-error {
+    border-color: var(--danger-color);
+    background: rgba(255, 107, 107, 0.1);
+    animation: shake 0.5s ease-in-out;
+}
+
+@keyframes shake {
+    0%, 100% { transform: translateX(0); }
+    25% { transform: translateX(-5px); }
+    75% { transform: translateX(5px); }
+}
+
+/* Responsive adjustments for file upload */
+@media (max-width: 768px) {
+    .upload-zone {
+        padding: 12px 15px;
+        min-height: 45px;
+        gap: 10px;
+    }
+    
+    .upload-icon {
+        font-size: 22px;
+    }
+    
+    .upload-title {
+        font-size: 12px;
+    }
+    
+    .upload-subtitle {
+        font-size: 11px;
+    }
+    
+    .upload-formats {
+        font-size: 10px;
+        padding: 3px 8px;
+    }
+}
+
 /* Section Block Styles */
 section {
     flex: none;
     width: 100%;
     background-color: var(--bg-secondary);
     border: 1px solid var(--border-color);
-    padding: 20px;
+    padding: 10px 20px;
     margin: 16px auto;
     border-radius: 8px;
     box-sizing: border-box;
@@ -66,6 +278,7 @@ section:hover {
     align-items: center;
     gap: 15px;
     overflow: hidden;
+    padding: 10px;
 }
 
 #sector1 .controls-container {
@@ -137,119 +350,699 @@ section:hover {
 /* Sector 2 - Table Area */
 #sector2 {
     min-height: 400px;
-    max-height: 70vh;
+    /* Allow the table area to grow when the page is zoomed — don't artificially cap height */
+    max-height: none;
     display: flex;
     flex-direction: column;
-    overflow: hidden; /* Change to hidden, let DataTables handle scrolling */
+    /* Allow native scrolling if content exceeds the container */
+    overflow: auto;
+    position: relative;
+    overflow-x: auto; /* Enable horizontal scrolling for small screens */
+    padding: 10px;
+    box-sizing: border-box;
+}
+
+/* Table Controls Styles */
+.table-controls {
+    display: flex;
+    justify-content: flex-start;
+    align-items: center;
+    margin: 8px 0 7px 0;
+    gap: 10px;
+    position: absolute;
+    top: 22px;
+    left: 20px;
+    z-index: 10;
+}
+
+/* Adjust section positioning for button overlay */
+#sector2 {
     position: relative;
 }
 
-/* Table Base Styles */
-#detailTable {
-    width: 100%;
-    border-collapse: collapse;
-    background-color: var(--bg-secondary);
-    color: var(--text-secondary);
-    border: 1px solid var(--border-color);
+#sector2 h2 {
+    margin-bottom: 15px;
+    position: relative;
+    z-index: 1;
+    height: auto;
+    line-height: 1.4;
 }
 
-#detailTable th, 
-#detailTable td {
-    border: 1px solid var(--border-color);
-    padding: 8px;
-    text-align: left;
-}
-
-#detailTable th {
-    background-color: var(--border-color);
-    color: var(--text-primary);
-    font-weight: bold;
-}
-
-/* DataTables Base Styles */
-.dataTables_wrapper {
-    color: var(--text-secondary);
-    background-color: var(--bg-secondary);
-    width: 100% !important;
-}
-
-/* DataTables Table Styles */
-table.dataTable {
-    background-color: var(--bg-secondary);
-    color: var(--text-secondary);
-    width: 100% !important;
-}
-
-table.dataTable thead,
-table.dataTable tbody,
-table.dataTable tfoot {
-    width: 100% !important;
-}
-
-table.dataTable thead th {
-    background-color: var(--border-color) !important;
-    color: var(--text-primary) !important;
-    font-weight: bold;
-}
-
-table.dataTable tbody td {
-    background-color: var(--bg-secondary) !important;
-    color: var(--text-secondary) !important;
-}
-
-table.dataTable tbody tr:nth-child(even) td {
-    background-color: var(--bg-tertiary) !important;
-}
-
-table.dataTable tbody tr:hover td {
-    background-color: var(--bg-hover) !important;
-}
-
-/* Force override all table cell styles */
-table.dataTable td,
-table.dataTable th {
-    background-color: inherit !important;
-    color: inherit !important;
-}
-
-/* Fix possible fixed column issues */
-.dtfc-fixed-left {
-    background-color: var(--bg-secondary) !important;
-    color: var(--text-secondary) !important;
-}
-
-.dtfc-fixed-left th {
-    background-color: var(--border-color) !important;
-    color: var(--text-primary) !important;
-}
-
-.dataTables_length select,
-.dataTables_filter input {
+.control-button {
     background-color: var(--bg-tertiary);
     color: var(--text-secondary);
     border: 1px solid var(--border-color);
-    padding: 5px;
+    padding: 6px 10px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 500;
+    transition: all 0.3s ease;
+    white-space: nowrap;
+    line-height: 1.3;
 }
 
-.dataTables_info {
+.control-button:hover {
+    background-color: var(--bg-hover);
+    border-color: var(--border-light);
+    color: var(--text-primary);
+}
+
+.control-button:active {
+    transform: translateY(1px);
+    background-color: var(--accent-primary);
+    border-color: var(--accent-primary);
+    color: var(--text-primary);
+}
+
+.control-button:disabled {
+    background-color: var(--bg-tertiary);
+    color: var(--text-disabled);
+    border-color: var(--border-color);
+    cursor: not-allowed;
+    box-shadow: none;
+}
+
+.control-button:disabled:hover {
+    transform: none;
+    background-color: var(--bg-tertiary);
+    color: var(--text-disabled);
+    border-color: var(--border-color);
+}
+
+/* Layout adjustments for new settings section */
+.main-layout {
+    display: flex;
+    flex-direction: row;
+    width: 100%;
+    /* Use min-height so the layout can grow beyond the viewport when content is larger (zooming) */
+    min-height: 100vh; /* Ensure it fills viewport at minimum but can grow */
+}
+
+.left-panel {
+    width: 28%;
+    background-color: var(--bg-primary);
+    box-sizing: border-box;
+    margin-right: 20px;
+    display: flex;
+    flex-direction: column;
+    flex-grow: 1; /* Allow the panel to grow and fill the height */
+}
+
+.right-panel {
+    width: 72%;
+    background-color: var(--bg-primary);
+    display: flex;
+    flex-direction: column;
+    gap: 15px; /* Reduced from 20px to 15px */
+    margin-left: 20px;
+    flex-grow: 1; /* Allow the panel to grow and fill the height */
+}
+
+#settings {
+    background-color: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    padding: 10px 20px;
+    border-radius: 8px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    margin-bottom: 20px;
+}
+
+#file-upload h2 {
+    color: var(--text-primary);
+    text-align: center;
+    margin-bottom: 8px;
+}
+
+#settings h2 {
+    color: var(--text-primary);
+    margin-bottom: 8px;
+    text-align: center;
+}
+
+#settings h3 {
+    color: var(--text-primary);
+    margin: 4px 0 4px 0;
+    font-size: 15px;
+    font-weight: 600;
+}
+
+#settings h3:first-of-type {
+    margin-top: 0;
+}
+
+.settings-container {
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+}
+
+/* Divider style between groups */
+.settings-divider {
+    height: 1px;
+    background: linear-gradient(90deg, rgba(255,255,255,0.05), rgba(255,255,255,0.4), rgba(255,255,255,0.05));
+    margin: 8px 0 4px 0;
+    border: none;
+}
+
+/* Extra spacing rule in case older cached gap not applied */
+
+/* Settings rows & help tooltips */
+.setting-row {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 3px;
+    flex-wrap: wrap;
+    font-size: 13px;
+    width: 100%;
+    margin-bottom: 8px;
+}
+.setting-row label.setting-label {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-weight: 500;
+    margin: 0;
+    font-size: 13px;
+}
+.setting-row input[type="number"],
+.setting-row input[type="date"],
+.setting-row input[type="file"],
+.setting-row input[type="datetime-local"] {
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    color: var(--text-secondary);
+    padding: 6px 8px;
+    border-radius: 4px;
+    font-size: 13px;
+    width: 100%;
+    max-width: 220px;
+    color-scheme: dark;
+    height: 32px;
+    box-sizing: border-box;
+}
+.setting-row input[type="datetime-local"]::-webkit-calendar-picker-indicator {
+    filter: invert(0.85) brightness(1.2);
+    opacity: 0.85;
+    cursor: pointer;
+}
+.setting-row input[type="datetime-local"]:focus {
+    outline: none;
+    border-color: var(--accent-primary);
+    box-shadow: 0 0 4px rgba(13,110,253,0.4);
+}
+/* Checkbox inside label alignment */
+.setting-row label.setting-label input[type="checkbox"] {
+    margin-right: 5px;
+}
+.help-icon {
+    display: inline-flex;
+    justify-content: center;
+    align-items: center;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: var(--accent-primary);
+    color: #fff;
+    font-size: 11px;
+    font-weight: bold;
+    cursor: help;
+    position: relative;
+    line-height: 1;
+    user-select: none;
+}
+.help-icon::after {
+    content: attr(data-tip);
+    position: absolute;
+    top: 50%;
+    left: 100%;
+    transform: translate(8px, -50%);
+    background: rgba(20,20,20,0.95);
+    color: #fff;
+    padding: 6px 8px;
+    border-radius: 4px;
+    font-size: 12px;
+    line-height: 1.3;
+    min-width: 160px;
+    max-width: 240px;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.4);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity .15s ease;
+    z-index: 50;
+    white-space: normal;
+}
+.help-icon::before {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 100%;
+    transform: translate(0, -50%);
+    border: 6px solid transparent;
+    border-left-color: rgba(20,20,20,0.95);
+    opacity: 0;
+    transition: opacity .15s ease;
+    z-index: 51;
+}
+.help-icon:hover::after,
+.help-icon:focus::after,
+.help-icon:hover::before,
+.help-icon:focus::before {
+    opacity: 1;
+}
+/* Responsive tweak: stack rows if narrow */
+@media (max-width: 1100px) {
+    .setting-row { flex-direction: row; }
+    .help-icon::after { left: 50%; top: 100%; transform: translate(-50%, 8px); }
+    .help-icon::before { left: 50%; top: 100%; transform: translate(-50%, 0); border-left-color: transparent; border-top-color: rgba(20,20,20,0.95); }
+}
+
+/* DataTables Base Styles - Using scrollX for horizontal overflow */
+table.dataTable {
+    width: 100% !important;
+    background-color: var(--bg-secondary);
+    color: var(--text-secondary);
+    border-collapse: separate;
+    margin: 0;
+}
+
+/* DataTables scrollX container optimization */
+.dataTables_wrapper .dataTables_scrollBody {
+    -webkit-overflow-scrolling: touch; /* iOS smooth scrolling */
+    overflow-x: auto !important;
+}
+
+/* Prevent text wrapping for cleaner layout */
+table.dataTable,
+table.dataTable.nowrap th,
+table.dataTable.nowrap td {
+    white-space: nowrap;
+    border: 1px solid #afafafa9;
+}
+
+/* Allow proper line breaks for specific columns (like MAC field) */
+.wrap-data-column {
+    white-space: pre-line !important; /* Preserve line breaks from \n characters */
+    word-wrap: break-word !important;
+    max-width: 200px; /* Limit width if needed */
+    line-height: 1.4; /* Better line spacing for multi-line content */
+    padding: 8px 4px !important; /* Extra padding for readability */
+}
+
+/* Wider style for Data column */
+.wrap-data-column-wide {
+    white-space: pre-line !important; /* Preserve line breaks from \n characters */
+    word-wrap: break-word !important;
+    max-width: 300px; /* Wider than regular wrap-data-column */
+    min-width: 150px; /* Minimum width for Data column */
+    line-height: 1.4; /* Better line spacing for multi-line content */
+    padding: 8px 4px !important; /* Extra padding for readability */
+}
+
+/* DataTables wrapper styling */
+.dataTables_wrapper {
+    background-color: var(--bg-secondary);
+    color: var(--text-secondary);
+    padding: 10px;
+    border-radius: 8px;
+}
+
+/* Overlay DataTable Styles - 使用通用樣式 */
+
+/* Overlay DataTable wrapper optimization - 確保水平滑動正常運作 */
+.overlay-content .dataTables_wrapper {
+    background-color: var(--bg-secondary);
+    color: var(--text-secondary);
+    padding: 10px;
+    border-radius: 8px;
+    border: 1px solid var(--border-color);
+    width: 100%;
+    box-sizing: border-box; /* 確保 padding 包含在寬度內 */
+    margin: 0; /* 移除可能的外邊距 */
+}
+
+/* 通用 DataTables 控制項樣式 */
+.dataTables_wrapper .dataTables_length select,
+.dataTables_wrapper .dataTables_filter input {
+    background-color: var(--bg-tertiary);
+    color: var(--text-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    padding: 5px 8px;
+}
+
+.dataTables_wrapper .dataTables_info {
     color: var(--text-muted);
 }
 
-.dataTables_paginate .paginate_button {
+.dataTables_wrapper .dataTables_paginate .paginate_button {
     background-color: var(--bg-tertiary);
     border: 1px solid var(--border-color);
     color: var(--text-secondary);
-    padding: 5px 10px;
+    padding: 6px 12px;
     margin: 0 2px;
+    border-radius: 4px;
+    cursor: pointer;
 }
 
-.dataTables_paginate .paginate_button:hover {
+.dataTables_wrapper .dataTables_paginate .paginate_button:hover {
     background-color: var(--bg-hover);
+    border-color: var(--border-light);
 }
 
-.dataTables_paginate .paginate_button.current {
+.dataTables_wrapper .dataTables_paginate .paginate_button.current {
     background-color: var(--accent-primary);
     color: var(--text-primary);
+    border-color: var(--accent-primary);
+}
+
+.overlay-content .dataTables_wrapper .dataTables_scrollBody {
+    -webkit-overflow-scrolling: touch; /* iOS 順滑滑動 */
+    overflow-x: auto !important;
+}
+
+.overlay-content .dataTables_wrapper .dataTables_length select,
+.overlay-content .dataTables_wrapper .dataTables_filter input {
+    background-color: var(--bg-tertiary);
+    color: var(--text-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    padding: 5px 8px;
+}
+
+.overlay-content .dataTables_wrapper .dataTables_info {
+    color: var(--text-muted);
+}
+
+.overlay-content .dataTables_wrapper .dataTables_paginate .paginate_button {
+    background-color: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    color: var(--text-secondary);
+    padding: 6px 12px;
+    margin: 0 2px;
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+.overlay-content .dataTables_wrapper .dataTables_paginate .paginate_button:hover {
+    background-color: var(--bg-hover);
+    border-color: var(--border-light);
+}
+
+.overlay-content .dataTables_wrapper .dataTables_paginate .paginate_button.current {
+    background-color: var(--accent-primary);
+    color: var(--text-primary);
+    border-color: var(--accent-primary);
+}
+
+/* 確保 overlay 中的 tab content 也支援滑動 */
+.overlay-content #nodeData {
+    overflow-x: auto;
+    width: 100%;
+}
+
+/* Ensure proper line breaks work in overlay tables */
+.overlay-content .wrap-data-column {
+    white-space: pre-line !important; /* Preserve line breaks from \n characters */
+    word-wrap: break-word !important;
+    max-width: 200px; /* Limit width if needed */
+    min-width: 100px; /* Minimum width for readability */
+    vertical-align: top; /* Align to top for multi-line content */
+    line-height: 1.4; /* Better line spacing for multi-line content */
+    padding: 8px 4px !important; /* Extra padding for readability */
+}
+
+/* Wider style for Data column in overlay */
+.overlay-content .wrap-data-column-wide {
+    white-space: pre-line !important; /* Preserve line breaks from \n characters */
+    word-wrap: break-word !important;
+    max-width: 300px; /* Wider than regular wrap-data-column */
+    min-width: 150px; /* Minimum width for Data column */
+    vertical-align: top; /* Align to top for multi-line content */
+    line-height: 1.4; /* Better line spacing for multi-line content */
+    padding: 8px 4px !important; /* Extra padding for readability */
+}
+
+/* Basic Info Tab Styles */
+.basic-info-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr 2fr; /* 20% 20% 20% 40% */
+    gap: 20px;
+    max-width: 100%;
+}
+
+/* 響應式設計：在較小螢幕上改為兩列佈局 */
+@media (max-width: 1200px) {
+    .basic-info-grid {
+        grid-template-columns: 1fr 1fr; /* 兩列佈局 */
+    }
+}
+
+/* 響應式設計：在手機螢幕上改為單列佈局 */
+@media (max-width: 768px) {
+    .basic-info-grid {
+        grid-template-columns: 1fr; /* 單列佈局 */
+    }
+}
+
+.info-section {
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 16px;
+}
+
+.info-section h3 {
+    margin: 0 0 12px 0;
+    color: var(--accent-primary);
+    font-size: 14px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    border-bottom: 1px solid var(--border-color);
+    padding-bottom: 8px;
+}
+
+.info-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+    padding: 4px 0;
+}
+
+.info-item:last-child {
+    margin-bottom: 0;
+}
+
+.info-item .label {
+    color: var(--text-muted);
+    font-size: 13px;
+    font-weight: 500;
+    min-width: 120px;
+    text-align: left;
+}
+
+.info-item span:last-child {
+    color: var(--text-primary);
+    font-weight: 600;
+    text-align: right;
+    word-break: break-all;
+    max-width: 150px;
+}
+
+/* 時間範圍區塊的特殊樣式 */
+.time-range-section h3 {
+    color: var(--accent-secondary, var(--accent-primary));
+}
+
+.time-range-section .info-item span:last-child {
+    max-width: 200px; /* 時間範圍區塊有更多空間，可以顯示更長的文字 */
+}
+
+/* Ensure table cells can expand to accommodate wrapped content */
+.overlay-content table.dataTable td.wrap-data-column,
+.overlay-content table.dataTable td.wrap-data-column-wide {
+    height: auto !important;
+    min-height: 30px;
+}
+
+/* Overlay Styles */
+.overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.85);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 1000;
+}
+
+.overlay.hidden {
+    display: none;
+}
+
+.overlay-content {
+    background: var(--bg-secondary);
+    color: var(--text-secondary);
+    padding: 20px;
+    border-radius: 8px;
+    width: 90%;
+    height: 80%;
+    max-width: 1400px;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.5);
+    overflow: hidden; /* 👈 隱藏 overlay-content 的滾動條 */
+    display: flex;
+    flex-direction: column;
+    margin: 0 auto; /* 確保水平置中 */
+    box-sizing: border-box; /* 確保 padding 包含在寬度內 */
+}
+
+/* Tabs Styles */
+.tabs {
+    display: flex;
+    margin-bottom: 10px;
+}
+
+.tab-button {
+    flex: 1;
+    padding: 10px 8px;
+    cursor: pointer;
+    background: var(--bg-tertiary);
+    color: var(--text-secondary);
+    border: 1px solid var(--border-color);
+    text-align: center;
+    border-radius: 4px 4px 0 0;
+    font-size: 14px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.tab-button.active {
+    background: var(--accent-primary);
+    color: var(--text-primary);
+    border-color: var(--accent-primary);
+}
+
+.tab-content {
+    background: var(--bg-tertiary);
+    color: var(--text-secondary);
+    padding: 15px;
+    border-radius: 0 0 4px 4px;
+    border: 1px solid var(--border-color);
+    flex: 1;
+    width: 100%;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    box-sizing: border-box; /* 確保 padding 包含在寬度內 */
+    overflow: hidden; /* 防止內容溢出 */
+}
+
+.tab-content.active {
+    display: flex;
+    flex-direction: column;
+}
+
+.tab-content.hidden {
+    display: none !important; /* 使用 !important 確保隱藏優先級最高 */
+}
+
+/* 特別針對 nodeData tab 的樣式 - 只在這裡處理滾動 */
+#nodeData {
+    overflow: auto; /* 👈 只在最內層容器處理滾動 */
+    width: 100%;
+    height: 100%;
+    flex: 1;
+    box-sizing: border-box;
+    padding: 0; /* 移除額外的內邊距，由 tab-content 提供 */
+}
+
+/* Node Charts Styles */
+/* Charts tab content (previously #nodeCharts) - renamed to be more generic for future chart tabs */
+#nodeSignalChart,
+#nodeUpFreqChart,
+#nodeGwChart {
+    overflow: auto;
+    width: 100%;
+    height: 100%;
+    flex: 1;
+    padding: 0; /* remove extra padding; provided by .tab-content */
+    box-sizing: border-box;
+}
+
+.node-charts-container {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+}
+
+.chart-header {
+    margin-bottom: 15px;
+    text-align: center;
+}
+
+.chart-header h3 {
+    color: var(--text-primary);
+    margin: 0 0 5px 0;
+    font-size: 18px;
+}
+
+.chart-description {
+    color: var(--text-muted);
+    margin: 0;
+    font-size: 14px;
+}
+
+.node-chart-wrapper {
+    flex: 1;
+    position: relative;
+    min-height: 400px;
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    padding: 15px;
+}
+
+.node-chart-wrapper canvas {
+    width: 100% !important;
+    height: 100% !important;
+}
+
+/* Close Overlay Button */
+#closeOverlay {
+    background: var(--bg-tertiary);
+    color: var(--text-secondary);
+    border: 1px solid var(--border-color);
+    padding: 10px 20px;
+    cursor: pointer;
+    border-radius: 4px;
+    margin-top: 10px;
+    transition: background-color 0.3s ease;
+}
+
+#closeOverlay:hover {
+    background: var(--bg-hover);
+    border-color: var(--border-light);
+}
+
+/* Devname Link Styles */
+.devname-link {
+    color: var(--accent-primary);
+    text-decoration: none;
+    cursor: pointer;
+}
+
+.devname-link:hover {
+    color: var(--accent-secondary);
+    text-decoration: underline;
 }
 
 /* Responsive Adjustments */
@@ -289,5 +1082,43 @@ table.dataTable th {
     
     #sector2 {
         padding: 15px;
+    }
+
+    /* Adjustments for new layout */
+    .main-layout {
+        flex-direction: column;
+    }
+
+    .left-panel,
+    .right-panel {
+        width: 100%;
+        height: auto;
+        margin: 0;
+    }
+
+    .left-panel {
+        padding: 0 15px;
+    }
+
+    .right-panel {
+        padding: 0 15px;
+    }
+
+    /* Overlay adjustments for mobile */
+    .overlay-content {
+        width: 95%;
+        height: 90%;
+        padding: 15px;
+    }
+}
+
+@media (max-width: 900px) {
+    .left-panel { 
+        width: 100%; 
+        margin-right: 0;
+    }
+    .right-panel { 
+        width: 100%; 
+        margin-left: 0;
     }
 }

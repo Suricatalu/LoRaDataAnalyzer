@@ -6,15 +6,13 @@
     <title>WISE-6610 Data Analyzer</title>
     <link rel="stylesheet" href="assets/style.css">
     <link rel="stylesheet" href="https://cdn.datatables.net/1.13.6/css/jquery.dataTables.min.css">
-    <link rel="stylesheet" href="https://cdn.datatables.net/fixedheader/3.4.0/css/fixedHeader.dataTables.min.css">
-    <link rel="stylesheet" href="https://cdn.datatables.net/fixedcolumns/4.3.0/css/fixedColumns.dataTables.min.css">
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
     <script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
-    <script src="https://cdn.datatables.net/fixedheader/3.4.0/js/dataTables.fixedHeader.min.js"></script>
-    <script src="https://cdn.datatables.net/fixedcolumns/4.3.0/js/dataTables.fixedColumns.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-moment"></script>
     <!-- Modular JavaScript files -->
-    <script src="assets/data-processor.js"></script>
+    <script src="assets/data-processor-analytics.js"></script>
+    <script src="assets/data-processor-raw.js"></script>
     <script src="assets/chart-manager.js"></script>
     <script src="assets/table-manager.js"></script>
     <script src="assets/app-controller.js"></script>
@@ -22,31 +20,263 @@
 <body>
     <h1>WISE6610 Data Analyzer</h1>
     
-    <!-- Sector 1: Bar Chart -->
-    <section id="sector1">
-        <div class="controls-container">
-            <label for="threshold">Loss Rate Threshold: <input type="number" id="threshold" value="0" min="0" max="100" step="0.1" /></label>
-            <input type="file" id="csvFile" accept=".csv" />
+
+    <!-- Adjusted layout for sectors -->
+    <div class="main-layout">
+        <div class="left-panel">
+            <section id="file-upload">
+                <h2>History Records File Upload</h2>
+                <div class="file-upload-area" id="fileUploadArea">
+                    <div class="upload-zone" id="uploadZone">
+                        <div class="upload-icon">📁</div>
+                        <div class="upload-text">
+                            <div class="upload-title">Drag & Drop File</div>
+                            <div class="upload-subtitle">or click here to select a file</div>
+                        </div>
+                        <span class="help-icon upload-help" data-tip="Upload the exported CSV data from WISE-6610 V2. The file will be parsed locally in your browser.">?</span>
+                        <div class="upload-formats">Format: .csv</div>
+                    </div>
+                    <input type="file" id="csvFile" accept=".csv" hidden />
+                    <div class="file-info" id="fileInfo" style="display: none;">
+                        <div class="file-name" id="fileName"></div>
+                        <div class="file-size" id="fileSize"></div>
+                        <button class="remove-file-btn" id="removeFileBtn">✕</button>
+                    </div>
+                </div>
+            </section>
+            <section id="settings">
+                <h2>Settings</h2>
+                <div class="settings-container">
+                    <!-- Start DateTime -->
+                    <h3>Time Settings</h3>
+                    <div class="setting-row">
+                        <label class="setting-label">Start DateTime
+                            <span class="help-icon" data-tip="Only include records AFTER this date & time. Format: local timezone.">?</span>
+                        </label>
+                        <input type="datetime-local" id="startDate" />
+                    </div>
+
+                    <!-- End DateTime -->
+                    <div class="setting-row">
+                        <label class="setting-label">End DateTime
+                            <span class="help-icon" data-tip="Only include records BEFORE this date & time. Format: local timezone.">?</span>
+                        </label>
+                        <input type="datetime-local" id="endDate" />
+                    </div>
+                    
+
+                    <!-- Divider -->
+                    <div class="settings-divider" aria-hidden="true"></div>
+
+                    <!-- Basic Factor -->
+                    <h3>Basic Factor (Normal/Abnormal)</h3>
+                    <div class="setting-row">
+                        <label for="threshold" class="setting-label">Loss Rate Threshold (%)
+                            <span class="help-icon" data-tip="Highlight / analyze nodes whose packet loss rate exceeds or equals this threshold. Set 0 to disable highlighting.">?</span>
+                        </label>
+                        <input type="number" id="threshold" value="0" min="0" max="100" step="5" />
+                    </div>
+
+                    <!-- Divider -->
+                    <div class="settings-divider" aria-hidden="true"></div>
+
+                    <!-- FCNT Issue (checkbox inside label, on left) -->
+                    <h3>Optional Factor (Exception)</h3>
+                    <div class="setting-row">
+                        <label class="setting-label"><input type="checkbox" id="useFcntIssue" class="include-flag" /> FCNT Drop / Reset Issue
+                            <span class="help-icon" data-tip="Enable to only include nodes that had frame counter drop or reset events.">?</span>
+                        </label>
+                        <input type="number" id="fcntrIssueThreshold" min="0" value="1" step="1" placeholder="e.g. 1" />
+                    </div>
+
+                    <!-- Max Gap >= N Minutes Filter (checkbox inside label, on left) -->
+                    <div class="setting-row">
+                        <label class="setting-label"><input type="checkbox" id="useNoDataDuration" class="include-flag" /> No Data Gap (minutes)
+                            <span class="help-icon" data-tip="Find nodes that had no data for a continuous gap longer than this number of minutes when enabled.">?</span>
+                        </label>
+                        <input type="number" id="noDataDuration" min="0" value="30" step="1" placeholder="e.g. 30" />
+                    </div>
+                </div>
+            </section>
         </div>
-        <div class='chart-container'><canvas id='barChart'></canvas></div>
-    </section>
-    <!-- Sector 2: Detail Table -->
-    <section id="sector2">
-        <table id="detailTable" class="display">
-        <thead>
-            <tr>
-            <!-- Headers will be dynamically updated by JavaScript -->
-            <th>Devname</th>
-            <th>Devaddr</th>
-            <th>Total</th>
-            <th>Expected</th>
-            <th>Lost</th>
-            <th>Loss Rate (%)</th>
-            </tr>
-        </thead>
-        <tbody>
-        </tbody>
-        </table>
-    </section>
+        <div class="right-panel">
+            <!-- Sector 1: Bar Chart -->
+            <section id="sector1">
+                <h2>Statistics Bar Chart</h2>
+                <div class='chart-container'><canvas id='barChart'></canvas></div>
+            </section>
+            <!-- Sector 2: Detail Table -->
+            <section id="sector2">
+                <h2 style="text-align: center;">Node Statistics Table</h2>
+                <div class="table-controls">
+                    <button id="showAllNodesBtn" class="control-button">
+                        Show All
+                    </button>
+                </div>
+                <table id="detailTable" class="display nowrap cell-border">
+                <!-- <thead>
+                    <tr>
+                    <th>Devname</th>
+                    <th>Devaddr</th>
+                    <th>Loss Rate (%)</th>
+                    <th>Avg RSSI</th>
+                    <th>Avg SNR</th>
+                    <th>First Uplink Time</th>
+                    <th>Last Uplink Time</th>
+                    <th>FCNT Delta</th>
+                    <th>Duplicate Count</th>
+                    <th>Total Uplink Count</th>
+                    <th>FCNT Reset Count</th>
+                    <th>Used Data Rate</th>    
+                    </tr>
+                </thead>
+                <tbody>
+                </tbody> -->
+                </table>
+            </section>
+        </div>
+    </div>
+
+    <!-- Overlay for Node Details -->
+    <div id="nodeOverlay" class="overlay hidden">
+        <div class="overlay-content">
+            <h2 id="overlayTitle"></h2>
+            <p id="overlayTimeRange" style="font-size: 13px; color: #888; margin: 5px 0 15px 0;"></p>
+            <div class="tabs">
+                <button class="tab-button active" data-tab="basicInfo">基本資訊</button>
+                <button class="tab-button" data-tab="nodeSignalChart">RSSI & SNR Chart</button>
+                <button class="tab-button" data-tab="nodeUpFreqChart">Uplink Freq Chart</button>
+                <button class="tab-button" data-tab="nodeGwChart">GW Chart</button>
+                <button class="tab-button" data-tab="nodeData">Node 資料</button>
+            </div>
+            <div class="tab-content" id="basicInfo">
+                <!-- Basic Info Content -->
+                <div id="basicInfoContent" style="padding: 20px;">
+                    <div class="basic-info-grid">
+                        <div class="info-section">
+                            <h3>設備資訊</h3>
+                            <div class="info-item">
+                                <span class="label">設備名稱:</span>
+                                <span id="basicDevname">-</span>
+                            </div>
+                            <div class="info-item">
+                                <span class="label">設備地址:</span>
+                                <span id="basicDevaddr">-</span>
+                            </div>
+                        </div>
+                        
+                        <div class="info-section">
+                            <h3>信號品質</h3>
+                            <div class="info-item">
+                                <span class="label">平均 RSSI:</span>
+                                <span id="basicAvgRSSI">-</span>
+                            </div>
+                            <div class="info-item">
+                                <span class="label">平均 SNR:</span>
+                                <span id="basicAvgSNR">-</span>
+                            </div>
+                            <div class="info-item">
+                                <span class="label">遺失率:</span>
+                                <span id="basicLossRate">-</span>
+                            </div>
+                        </div>
+                        
+                        <div class="info-section">
+                            <h3>資料統計</h3>
+                            <div class="info-item">
+                                <span class="label">總封包數:</span>
+                                <span id="basicTotalPackets">-</span>
+                            </div>
+                            <div class="info-item">
+                                <span class="label">重複封包數:</span>
+                                <span id="basicDuplicatePackets">-</span>
+                            </div>
+                            <div class="info-item">
+                                <span class="label">FCNT 重置次數:</span>
+                                <span id="basicResetCount">-</span>
+                            </div>
+                        </div>
+                        
+                        <div class="info-section time-range-section">
+                            <h3>時間範圍</h3>
+                            <div class="info-item">
+                                <span class="label">首次上行時間:</span>
+                                <span id="basicFirstTime">-</span>
+                            </div>
+                            <div class="info-item">
+                                <span class="label">最後上行時間:</span>
+                                <span id="basicLastTime">-</span>
+                            </div>
+                            <div class="info-item">
+                                <span class="label">資料範圍:</span>
+                                <span id="basicTimeRange">-</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="tab-content hidden" id="nodeSignalChart">
+                <!-- Node Charts Content -->
+                <div class="node-charts-container">
+                    <div class="chart-header">
+                        <p class="chart-description">顯示選定節點的 RSSI 和 SNR 隨時間變化趨勢</p>
+                    </div>
+                    <div class="node-chart-wrapper">
+                        <canvas id="nodeTimeSeriesChart"></canvas>
+                    </div>
+                </div>
+            </div>
+            <div class="tab-content hidden" id="nodeUpFreqChart">
+                <!-- Node Uplink Frequency Chart Content -->
+                <div class="node-charts-container">
+                    <div class="chart-header">
+                        <p class="chart-description">顯示選定節點的上行頻率使用分布統計</p>
+                    </div>
+                    <div class="node-chart-wrapper">
+                        <canvas id="nodeUpFreqBarChart"></canvas>
+                    </div>
+                </div>
+            </div>
+            <div class="tab-content hidden" id="nodeGwChart">
+                <!-- Node Gateway Chart Content -->
+                <div class="node-charts-container">
+                    <div class="chart-header">
+                        <p class="chart-description">顯示選定節點被各個接收器（Gateway）收到的次數與所有接收器收到的次數的分布</p>
+                    </div>
+                    <div class="node-chart-wrapper">
+                        <canvas id="nodeGwPolarChart"></canvas>
+                    </div>
+                </div>
+            </div>
+            <div class="tab-content hidden" id="nodeData">
+                <!-- Node Data Table -->
+                <div class="table-info-header">
+                    <p style="margin: 0 0 10px 0; font-size: 14px; color: #aaa;">
+                        <strong>說明：</strong>以下資料為此節點裝置每一筆上行與下行封包的詳細資訊。
+                    </p>
+                </div>
+                <table id="nodeDataTable" class="display nowrap cell-border">
+                    <thead>
+                        <tr>
+                            <th>Received</th>
+                            <th>Type</th>
+                            <th>MAC</th>
+                            <th>U/L RSSI</th>
+                            <th>U/L SNR</th>
+                            <th>FCnt</th>
+                            <th>Datarate</th>
+                            <th>ACK</th>
+                            <th>Port</th>
+                            <th>Frequency</th>
+                            <th>MAC Command</th>
+                            <th>Data</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
 </body>
 </html>
