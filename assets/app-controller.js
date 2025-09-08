@@ -18,7 +18,8 @@ function buildClassificationConfig(options = {}) {
   const {
     threshold = 0, // 預設為 0，0 也是有效的 Loss Rate 篩選條件
     fcntFilter = { enabled: false },
-    gapThresholdMinutes = null
+  gapThresholdMinutes = null,
+  inactiveSinceMinutes = null
   } = options;
 
   const rules = [];
@@ -49,6 +50,18 @@ function buildClassificationConfig(options = {}) {
     });
   }
 
+  // Inactive Since 規則 - 只有在啟用時才檢查
+  if (inactiveSinceMinutes && inactiveSinceMinutes > 0) {
+    rules.push({
+      metric: 'inactiveSinceMinutes',
+      op: '>=',
+      value: inactiveSinceMinutes,
+      category: 'exception',
+      note: `Inactive since >= ${inactiveSinceMinutes} minutes (node.last -> overall.last)`,
+      priority: 1
+    });
+  }
+
   // 第二層：Normal vs Abnormal 規則（只對非 exception 節點適用）
   // threshold >= 0 都會建立規則，0 也是有效的篩選條件
   if (threshold >= 0) {
@@ -69,7 +82,8 @@ function buildClassificationConfig(options = {}) {
     filterOptions: {
       lossRateThreshold: threshold,
       fcntFilter,
-      gapThresholdMinutes
+  gapThresholdMinutes,
+  inactiveSinceMinutes
     },
     hierarchical: true // 標記為階層式分類
   };
@@ -467,6 +481,11 @@ function collectFilterOptions() {
   const gapMinutes = parseFloat(document.getElementById('noDataDuration')?.value || '');
   const gapThresholdMinutes = (gapEnabled && !isNaN(gapMinutes) && gapMinutes > 0) ? gapMinutes : undefined;
   
+  // Inactive Since -> 以整體最後時間為基準，節點最後上傳至整體最後時間的間隔（分鐘）
+  const inactiveEnabled = document.getElementById('useInactiveSince')?.checked;
+  const inactiveVal = parseFloat(document.getElementById('inactiveSinceMinutes')?.value || '');
+  const inactiveSinceMinutes = (inactiveEnabled && !isNaN(inactiveVal) && inactiveVal > 0) ? inactiveVal : undefined;
+  
   // FCNT Issue 篩選
   const fcntIssueEnabled = document.getElementById('useFcntIssue')?.checked;
   const fcntIssueThreshold = parseInt(document.getElementById('fcntrIssueThreshold')?.value || '1');
@@ -478,25 +497,28 @@ function collectFilterOptions() {
     gapEnabled,
     gapMinutes,
     gapThresholdMinutes,
+    inactiveEnabled,
+    inactiveSinceMinutes,
     fcntIssueEnabled,
     fcntIssueThreshold,
     fcntFilter
   });
   
-  return { filterWindow, gapThresholdMinutes, fcntFilter };
+  return { filterWindow, gapThresholdMinutes, fcntFilter, inactiveSinceMinutes };
 }
 
 /** 重建 / 更新 analytics 並刷新視圖 */
 function rebuildAnalytics() {
   if (!rawRecords.length) return;
   const threshold = parseFloat(document.getElementById('threshold')?.value) || 0;
-  const { filterWindow, gapThresholdMinutes, fcntFilter } = collectFilterOptions();
+  const { filterWindow, gapThresholdMinutes, fcntFilter, inactiveSinceMinutes } = collectFilterOptions();
   
   // 建立階層式分類配置，包含所有篩選選項
   const classification = buildClassificationConfig({
     threshold,
     fcntFilter,
-    gapThresholdMinutes
+  gapThresholdMinutes,
+  inactiveSinceMinutes
   });
   
   console.log('[App] Building analytics with hierarchical classification:', { threshold, fcntFilter, gapThresholdMinutes });
@@ -525,6 +547,9 @@ function setupEventListeners() {
   // Gap 條件
   document.getElementById('useNoDataDuration')?.addEventListener('change', () => rebuildAnalytics());
   document.getElementById('noDataDuration')?.addEventListener('input', () => rebuildAnalytics());
+  // Inactive Since 條件
+  document.getElementById('useInactiveSince')?.addEventListener('change', () => rebuildAnalytics());
+  document.getElementById('inactiveSinceMinutes')?.addEventListener('input', () => rebuildAnalytics());
   // FCNT Issue 條件
   document.getElementById('useFcntIssue')?.addEventListener('change', () => rebuildAnalytics());
   document.getElementById('fcntrIssueThreshold')?.addEventListener('input', () => rebuildAnalytics());
@@ -700,6 +725,10 @@ function clearFileSelection() {
   if (useNoDataDuration) {
     useNoDataDuration.checked = false;
   }
+  const useInactiveSince = document.getElementById('useInactiveSince');
+  if (useInactiveSince) {
+    useInactiveSince.checked = false;
+  }
   
   console.log('[App] File selection cleared, all data and statistics removed');
 }
@@ -850,16 +879,18 @@ function handleShowAllNodes() {
   console.log('[App] Showing all nodes status in time range...');
   
   // 收集時間範圍篩選條件（只使用時間範圍，忽略其他篩選條件）
-  const { filterWindow } = collectFilterOptions();
+  const { filterWindow, gapThresholdMinutes, fcntFilter, inactiveSinceMinutes } = collectFilterOptions();
   
   // 重新分析所有資料，只使用 Loss Rate threshold，不使用其他篩選條件
   const threshold = parseFloat(document.getElementById('threshold')?.value) || 0;
   
-  // 建立只包含 Loss Rate threshold 的分類配置（忽略 FCNT 和 Gap 篩選）
+  // 建立分類配置：沿用目前 UI 的例外規則設定，僅「不額外篩掉節點」
+  // 說明：我們目前採用的是階層式分類，不會因為例外規則而過濾節點，只會用來標記分類與產生徽章
   const classification = buildClassificationConfig({
     threshold,
-    fcntFilter: { enabled: false }, // 不使用 FCNT 篩選
-    gapThresholdMinutes: null // 不使用 Gap 篩選
+    fcntFilter,
+    gapThresholdMinutes,
+    inactiveSinceMinutes
   });
   
   console.log('[App] Building analytics for all nodes with classification:', classification);
@@ -868,7 +899,8 @@ function handleShowAllNodes() {
   const { analytics } = buildAnalytics(rawRecords, { 
     classification, 
     filterWindow, 
-    gapThresholdMinutes: null // 確保不使用 Gap 分析
+    // 保持 gap 分析設定以便產生每日與總覽的 GAP 相關徽章
+    gapThresholdMinutes
   });
   
   // 更新當前分析結果並刷新顯示

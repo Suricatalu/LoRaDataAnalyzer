@@ -147,13 +147,23 @@ export type NodeDailyStat = {
 	expected: number;            // segment expected sum
 	lost: number;                // expected - total
 	lossRate: number;            // %
-	avgRSSI: number;
-	avgSNR: number;
-	firstTime: string;           // ISO
-	lastTime: string;            // ISO
+	avgRSSI: number | null;
+	avgSNR: number | null;
+	firstTime: string | null;    // ISO
+	lastTime: string | null;     // ISO
 	fcntSpan: number;            // lastFcnt - firstFcnt + 1 (同日)
 	duplicatePackets: number;    // totalWithDuplicates - total
 	totalWithDuplicates: number; // 上行紀錄含重複
+	// noData: 若此日沒有任何原始上行紀錄，但經補齊策略產生的虛構日統計，則為 true
+	noData?: boolean;
+	// expectedSource: 此日 expected 的來源，用於前端提示
+	// - 'fcnt': 由當日實際 Fcnt 段落計算
+	// - 'baseline-fixed': 由固定基準（配置）補齊
+	// - 'baseline-median': 由該 node 有資料日期的 expected 中位數補齊
+	// - 'interpolated': 由前/後日趨勢估算
+	expectedSource?: 'fcnt' | 'baseline-fixed' | 'baseline-median' | 'interpolated';
+	// baselineExpected: 若為補齊日，記錄用來計算 100% loss 的期望值（便於檢視）
+	baselineExpected?: number;
 	// gatewaysUsed: 當日該 node 使用過的 Gateway 清單（去重並排序的 MAC 地址）
 	gatewaysUsed?: string[];
 	// gatewayCounts: 以全域 Gateway 集合（由所有 node 的 records 決定）為基準，記錄當日每個 Gateway 被該 node 使用的次數。
@@ -225,7 +235,8 @@ export type NodeStat = {
 // 4.4 全域每日
 export type GlobalDailyStat = {
 	date: string;
-	nodes: number;               // 當日有上行資料節點數
+	nodes: number;               // 當日有上行資料節點數（相容保留）
+	nodesTotal: number;          // 期望節點總數（含無資料但被補齊為 100% loss 的節點）
 	uniquePackets: number;
 	totalWithDuplicates: number;
 	expected: number;
@@ -338,6 +349,16 @@ export type AnalyticsMeta = {
 	lossRateScope: 'uplink-only';    // 目前僅支援上行遺失率
 	resetRule: 'any-decrease';       // 描述當前重置規則
 	classification?: ClassificationConfig;      // 新的規則式分類設定
+	// dailyFill: 控制「無資料日 = 100% 掉包」的補齊策略
+	dailyFill?: {
+		enabled: boolean;                      // 預設建議 true
+		mode: 'no-data-100-loss';             // 現階段唯一模式
+		expectedBaseline: 'per-node-daily-median' | 'fixed';
+		// 當 expectedBaseline='fixed' 或找不到中位數時，使用此固定值（預設 1）
+		fixedExpected?: number;
+		// 底線，避免 0 導致百分比無法計算（預設 1）
+		minExpected?: number;
+	};
 	filterWindow: {
 		start: string | null;
 		end: string | null;
@@ -418,6 +439,33 @@ export interface ProcessResult {
 	 - 其它：版本、resetRule='any-decrease'、固定 includeDownlinkInQuality=false、lossRateScope='uplink-only'。
 8. 如後續觸發Meta Rules的改變，將重新計算以上數據的統計
 
+### 5.A 無資料日補齊（No-Data Day Fill → 100% Loss）
+動機：確保「全期間節點數」與「任一天的節點數」一致，避免圖表在選定某日時出現節點數降低；同時將「當天完全未上傳」視為 100% 掉包。
+
+規格：
+- 啟用條件：`meta.dailyFill.enabled === true` 且 `meta.dailyFill.mode === 'no-data-100-loss'`。
+- 範圍：`timeRange` 內的每一個 UTC 日期，對每一個節點都應有一筆 `NodeDailyStat`。
+- 若某節點於該日無任何上行紀錄：
+	1) 產生一筆補齊日統計 (`noData = true`)。
+	2) `total = 0`, `duplicatePackets = 0`, `totalWithDuplicates = 0`, `resetCount = 0`。
+	3) `expected` 由 `expectedBaseline` 決定：
+		 - 'per-node-daily-median'：取該 node 在有資料日期的 `expected` 中位數；若不存在則 fallback 至 `fixedExpected`；若仍無值則使用 `minExpected`（預設 1）。
+		 - 'fixed'：直接使用 `fixedExpected`（預設 1）。
+		 設 `expectedSource` 與 `baselineExpected` 以便前端顯示。
+	4) `lost = expected`，`lossRate = 100`。
+	5) 品質欄位無樣本：`avgRSSI = null`, `avgSNR = null`；時間欄位空：`firstTime = null`, `lastTime = null`, `fcntSpan = -1`；gap 欄位為空陣列或不輸出。
+	6) `frequenciesUsed = []`, `frequencyCounts` 以全域基準填 0；`gatewaysUsed = []`, `gatewayCounts` 以全域基準填 0。
+- Global.daily 聚合：
+	- `nodesTotal` 固定等於全期間節點總數。
+	- `nodes` 保留為「實際有上行資料的節點數」。
+	- `expected/ lost/ lossRate` 等指標包含補齊日資料（即把無資料日也納入 100% 掉包計算）。
+	- 這可確保圖表維度對齊且趨勢不受「資料缺失導致分母縮小」影響。
+
+門檻與分類影響：
+- 補齊日的 `lossRate = 100`，若分類規則含 lossRate 的異常判定，該日將歸入 abnormal；
+- 若規則含 resetCount 的 exception，補齊日 `resetCount = 0` 不會誤觸；
+- 視需要可透過規則 `metric='noData'`（未來擴充）單獨處理，現階段建議用 lossRate 規則即可涵蓋。
+
 ---
 
 ## 6. 指標定義 & 公式
@@ -443,6 +491,8 @@ export interface ProcessResult {
 | gapCount | = lossGapFcnt.length；可用於分類規則 (例如 gapCount > 0) |
 | maxGapMinutes | 所有偵測 gap 的最大分鐘差；無 gap => -1 (sentinel) |
 | sentinel 值說明 | -1 代表「不可計算 / 資料不足」而非真實 0；前端應以特殊顯示(如 '--') |
+| noData | 布林；若為補齊日則 true，僅出現在 NodeDailyStat，用於前端註記 |
+| expectedSource/baselineExpected | 僅補齊日出現，顯示補齊依據與基準 |
 
 | frequenciesUsed | 當一個集合（numeric array）：代表該節點或全域在指定時間範圍內實際出現過的頻率（排序後去重）。`global.frequenciesUsed` 為所有 node 共同的頻率基準。 |
 | frequencyCounts | 以 `global.frequenciesUsed` 為基準的計數表（Record<string, number>），key 為頻率字串化（例如 "923.4"）；每個 node 的 `total` 與 `daily`、以及（選項性）global 層級可含此欄位；若某頻率未被該 node 使用，該 key 的值為 0。 |
@@ -465,6 +515,7 @@ export interface ProcessResult {
 | 重置判定 | `curr.Fcnt < prev.Fcnt` (任何遞減即重置) |
 | 重置意義 | 代表裝置重開機 / session 重啟 (FCnt 回繞或清零)；用於切 segment，避免跨生命週期累加 expected 造成膨脹 |
 | 分析時間視窗 | 先比對 `filterWindow` (start/end)，不在區間的原始紀錄直接過濾；`filterWindow.excluded` 紀錄被剔除數量 |
+| 當日完全無資料 | 若 `meta.dailyFill.enabled`，則生成補齊日：`expected` 依 baseline，`lost=expected`，`lossRate=100`，`noData=true`，品質/時間為空，counts 以全域基準填 0；並於 Global.daily 的 `nodesTotal` 保持全期間節點數 |
 
 ---
 
@@ -502,12 +553,20 @@ export interface ProcessResult {
 					"lossGapTime": [ ["2025-08-19T02:10:02.000Z", "2025-08-19T02:35:30.000Z"], ["2025-08-19T05:00:10.000Z", "2025-08-19T06:45:05.000Z"] ]
 				},
 				"timeline": { "firstTime":"2025-08-19T00:01:02.000Z", "lastTime":"2025-08-19T23:59:40.000Z", "fcntSpan":520, "resetCount":1 },
-				"daily": [ { "date":"2025-08-19", "total":120, "expected":125, "lost":5, "lossRate":4, "avgRSSI":-89.4, "avgSNR":7.1, "firstTime":"2025-08-19T00:01:02.000Z", "lastTime":"2025-08-19T23:59:40.000Z", "fcntSpan":520, "duplicatePackets":3, "totalWithDuplicates":123, "resetCount":1, "dataRatesUsed":["SF7BW125","SF8BW125"], "frequenciesUsed": [923.4], "frequencyCounts": { "923.4": 120, "921.2": 0, "919.0": 0 }, "gatewaysUsed": ["0016C001F1DE40D9"], "gatewayCounts": { "0016C001F1DE40D9": 120, "AA1234567890ABCD": 0, "BB9876543210DCBA": 0 }, "lossGapFcnt": [ [10100, 10125] ], "lossGapTime": [ ["2025-08-19T02:10:02.000Z", "2025-08-19T02:35:30.000Z"] ] } ]
+				"daily": [ 
+					{ "date":"2025-08-19", "total":120, "expected":125, "lost":5, "lossRate":4, "avgRSSI":-89.4, "avgSNR":7.1, "firstTime":"2025-08-19T00:01:02.000Z", "lastTime":"2025-08-19T23:59:40.000Z", "fcntSpan":520, "duplicatePackets":3, "totalWithDuplicates":123, "resetCount":1, "dataRatesUsed":["SF7BW125","SF8BW125"], "frequenciesUsed": [923.4], "frequencyCounts": { "923.4": 120, "921.2": 0, "919.0": 0 }, "gatewaysUsed": ["0016C001F1DE40D9"], "gatewayCounts": { "0016C001F1DE40D9": 120, "AA1234567890ABCD": 0, "BB9876543210DCBA": 0 }, "lossGapFcnt": [ [10100, 10125] ], "lossGapTime": [ ["2025-08-19T02:10:02.000Z", "2025-08-19T02:35:30.000Z"] ] },
+					// 無資料日補齊範例：2025-08-20 當天沒有任何上行 → 以中位 expected=120 補齊，掉包率 100%
+					{ "date":"2025-08-20", "total":0, "expected":120, "lost":120, "lossRate":100, "avgRSSI":null, "avgSNR":null, "firstTime":null, "lastTime":null, "fcntSpan":-1, "duplicatePackets":0, "totalWithDuplicates":0, "resetCount":0, "dataRatesUsed":[], "frequenciesUsed": [], "frequencyCounts": { "923.4": 0, "921.2": 0, "919.0": 0 }, "gatewaysUsed": [], "gatewayCounts": { "0016C001F1DE40D9": 0, "AA1234567890ABCD": 0, "BB9876543210DCBA": 0 }, "noData": true, "expectedSource": "baseline-median", "baselineExpected": 120 }
+				]
 			}
 		],
 		"global": {
 			"total": { "nodes":4, "uniquePackets":480, "totalWithDuplicates":495, "expected":500, "lost":20, "lossRate":4, "avgRSSI":-90.2, "avgSNR":6.9, "firstTime":"2025-08-19T00:00:30.000Z", "lastTime":"2025-08-19T23:59:59.000Z", "fcntSpan":2050, "resetCount":3, "duplicatePackets":15, "dataRatesUsed":["SF7BW125","SF8BW125","SF9BW125"], "frequenciesUsed": [923.4, 921.2, 919.0], "gatewaysUsed": ["0016C001F1DE40D9", "AA1234567890ABCD", "BB9876543210DCBA"] },
-			"daily": [ { "date":"2025-08-19", "nodes":4, "uniquePackets":480, "totalWithDuplicates":495, "expected":500, "lost":20, "lossRate":4, "avgRSSI":-90.2, "avgSNR":6.9, "firstTime":"2025-08-19T00:00:30.000Z", "lastTime":"2025-08-19T23:59:59.000Z", "fcntSpan":2050, "resetCount":3, "duplicatePackets":15, "dataRatesUsed":["SF7BW125","SF8BW125","SF9BW125"], "gatewaysUsed": ["0016C001F1DE40D9", "AA1234567890ABCD", "BB9876543210DCBA"] } ]
+			"daily": [ 
+				{ "date":"2025-08-19", "nodes":4, "nodesTotal":4, "uniquePackets":480, "totalWithDuplicates":495, "expected":500, "lost":20, "lossRate":4, "avgRSSI":-90.2, "avgSNR":6.9, "firstTime":"2025-08-19T00:00:30.000Z", "lastTime":"2025-08-19T23:59:59.000Z", "fcntSpan":2050, "resetCount":3, "duplicatePackets":15, "dataRatesUsed":["SF7BW125","SF8BW125","SF9BW125"], "gatewaysUsed": ["0016C001F1DE40D9", "AA1234567890ABCD", "BB9876543210DCBA"] },
+				// 範例：2025-08-20 有 1 個節點完全無上行 → nodes=3，但 nodesTotal 仍為 4；expected/lost/lossRate 已包含補齊日
+				{ "date":"2025-08-20", "nodes":3, "nodesTotal":4, "uniquePackets":360, "totalWithDuplicates":372, "expected":480, "lost":120, "lossRate":25, "avgRSSI":-90.5, "avgSNR":6.8, "firstTime":"2025-08-20T00:00:12.000Z", "lastTime":"2025-08-20T23:59:40.000Z", "fcntSpan":1800, "resetCount":2, "duplicatePackets":12, "dataRatesUsed":["SF7BW125","SF8BW125"], "gatewaysUsed": ["0016C001F1DE40D9", "AA1234567890ABCD"] }
+			]
 		},
 		"threshold": {
 			"total": { "normalcnt":4, "abnormalcnt":2, "exceptioncnt":1, "normal":["WISE-2410-VibTest","DeviceX","WISE-NodeY","WISE-NodeZ"], "abnormal":["WISE-4610-S617","DeviceW"], "exception":["VIS_CDA6"] },

@@ -342,6 +342,7 @@ function buildAnalytics(records, options = {}) {
   const version = options.version || '2.0.0';
   const classification = options.classification || DEFAULT_CLASSIFICATION;
   const gapThresholdMinutes = typeof options.gapThresholdMinutes === 'number' && options.gapThresholdMinutes > 0 ? options.gapThresholdMinutes : undefined;
+  const dailyFill = normalizeDailyFill(options.dailyFill);
 
   
 
@@ -363,19 +364,38 @@ function buildAnalytics(records, options = {}) {
   // 4. 計算 perNode 統計
   const perNode = Array.from(nodeMap.values()).map(entry => calcNodeStat(entry, { gapThresholdMinutes, globalFrequencies, globalGateways }));
 
+  // 4.A 無資料日補齊（依 timeRange 內所有日期）
+  const timeRange = calcTimeRange(filteredRecords);
+  const allDates = buildDateList(timeRange.start, timeRange.end);
+  if (dailyFill.enabled && perNode.length && allDates.length) {
+    fillPerNodeMissingDaily(perNode, allDates, {
+      globalFrequencies,
+      globalGateways,
+      expectedBaseline: dailyFill.expectedBaseline,
+      fixedExpected: dailyFill.fixedExpected,
+      minExpected: dailyFill.minExpected
+    });
+  }
+
   // 5. 全域統計 (重跑一次)
-  const global = calcGlobal(upRecords);
+  let global = calcGlobal(upRecords);
   // attach frequenciesUsed baseline to global.total
   global.total.frequenciesUsed = globalFrequencies;
   // attach gatewaysUsed baseline to global.total
   global.total.gatewaysUsed = globalGateways;
 
+  // 5.A 以補齊後 perNode.daily 重建 global.daily，並加入 nodesTotal
+  if (perNode.length && allDates.length) {
+    global.daily = aggregateGlobalDailyFromPerNode(perNode, allDates);
+    // nodesTotal 為固定總節點數
+    for (const d of global.daily) d.nodesTotal = perNode.length;
+  }
+
   // 6. 推導每日 threshold 三分類視圖 (rule-based -> 三類)
-  const threshold = buildThresholdView(perNode, classification, { upRecords, gapThresholdMinutes });
+  const threshold = buildThresholdView(perNode, classification, { upRecords, gapThresholdMinutes, endBoundary: fw.end });
 
   // 7. Meta
-  const timeRange = calcTimeRange(filteredRecords);
-  const meta = buildMeta({ version, excludedCount, filterWindow: fw, timeRange, classification });
+  const meta = buildMeta({ version, excludedCount, filterWindow: fw, timeRange, classification, dailyFill });
 
   // 輸出當前使用的分類配置
   console.log('[Analytics] Current Classification Config:', classification);
@@ -396,10 +416,10 @@ function buildAnalytics(records, options = {}) {
  * @property {number} expected
  * @property {number} lost
  * @property {number} lossRate
- * @property {number} avgRSSI
- * @property {number} avgSNR
- * @property {string} firstTime
- * @property {string} lastTime
+ * @property {number|null} avgRSSI
+ * @property {number|null} avgSNR
+ * @property {string|null} firstTime
+ * @property {string|null} lastTime
  * @property {number} fcntSpan
  * @property {number} duplicatePackets
  * @property {number} totalWithDuplicates
@@ -407,6 +427,9 @@ function buildAnalytics(records, options = {}) {
  * @property {string[]} dataRatesUsed
  * @property {Array<[number|null,number|null]>} [lossGapFcnt]
  * @property {Array<[string|null,string|null]>} [lossGapTime]
+ * @property {boolean} [noData]
+ * @property {'fcnt'|'baseline-fixed'|'baseline-median'|'interpolated'} [expectedSource]
+ * @property {number} [baselineExpected]
  */
 /**
  * @typedef {Object} NodeStat
@@ -419,6 +442,7 @@ function buildAnalytics(records, options = {}) {
  * @typedef {Object} GlobalDailyStat
  * @property {string} date
  * @property {number} nodes
+ * @property {number} [nodesTotal]
  * @property {number} uniquePackets
  * @property {number} totalWithDuplicates
  * @property {number} expected
@@ -455,6 +479,7 @@ function buildAnalytics(records, options = {}) {
  * @property {'uplink-only'} lossRateScope
  * @property {'any-decrease'} resetRule
  * @property {Object} [classification]
+ * @property {{enabled:boolean,mode:'no-data-100-loss',expectedBaseline:'per-node-daily-median'|'fixed',fixedExpected?:number,minExpected?:number}} [dailyFill]
  * @property {{start:string|null,end:string|null,inclusiveStart:boolean,inclusiveEnd:boolean,excluded:number}} filterWindow
  * @property {{start:string|null,end:string|null,days:number}} timeRange
  */
@@ -569,6 +594,36 @@ function normalizeFilterWindow(fw = {}) {
   if (start && isNaN(start.getTime())) start = null;
   if (end && isNaN(end.getTime())) end = null;
   return { start, end, inclusiveStart: !!inclusiveStart, inclusiveEnd: !!inclusiveEnd };
+}
+
+function normalizeDailyFill(fill = {}) {
+  const enabled = fill.enabled !== false; // 預設啟用
+  const mode = 'no-data-100-loss';
+  const expectedBaseline = fill.expectedBaseline === 'fixed' ? 'fixed' : 'per-node-daily-median';
+  const fixedExpected = Number.isFinite(fill.fixedExpected) && fill.fixedExpected > 0 ? Math.floor(fill.fixedExpected) : 1;
+  const minExpected = Number.isFinite(fill.minExpected) && fill.minExpected > 0 ? Math.floor(fill.minExpected) : 1;
+  return { enabled, mode, expectedBaseline, fixedExpected, minExpected };
+}
+
+function buildDateList(startISO, endISO) {
+  if (!startISO || !endISO) return [];
+  const startKey = startISO.slice(0,10);
+  const endKey = endISO.slice(0,10);
+  const days = dateDiffDays(startKey, endKey) + 1;
+  const list = [];
+  let t = Date.parse(startKey + 'T00:00:00Z');
+  for (let i=0; i<days; i++) {
+    const d = new Date(t + i*86400000).toISOString().slice(0,10);
+    list.push(d);
+  }
+  return list;
+}
+
+function median(nums) {
+  if (!nums || !nums.length) return NaN;
+  const arr = nums.slice().sort((a,b)=>a-b);
+  const mid = Math.floor(arr.length/2);
+  return arr.length % 2 ? arr[mid] : (arr[mid-1]+arr[mid])/2;
 }
 
 function applyFilterWindow(records, fw) {
@@ -739,8 +794,8 @@ function buildNodeDaily(allRecords, gapThresholdMinutes, globalFrequencies, glob
       if (isValidNumber(r.Fcnt)) fcntRecords.push(r);
     }
     const counters = computeCounters(fcntRecords);
-    const avgRSSI = rssiCount ? rssiSum / rssiCount : NaN;
-    const avgSNR = snrCount ? snrSum / snrCount : NaN;
+  const avgRSSI = rssiCount ? rssiSum / rssiCount : null;
+  const avgSNR = snrCount ? snrSum / snrCount : null;
     
     // 計算每日的 gap
     let dailyLossGapFcnt, dailyLossGapTime;
@@ -767,8 +822,8 @@ function buildNodeDaily(allRecords, gapThresholdMinutes, globalFrequencies, glob
       expected: counters.expected,
       lost: counters.lost,
       lossRate: counters.lossRate,
-      avgRSSI: Number.isNaN(avgRSSI)?NaN:avgRSSI,
-      avgSNR: Number.isNaN(avgSNR)?NaN:avgSNR,
+  avgRSSI,
+  avgSNR,
       firstTime: counters.firstTime ? counters.firstTime.toISOString() : null,
       lastTime: counters.lastTime ? counters.lastTime.toISOString() : null,
       fcntSpan: counters.fcntSpan,
@@ -795,6 +850,119 @@ function buildNodeDaily(allRecords, gapThresholdMinutes, globalFrequencies, glob
   // 排序日期
   result.sort((a,b)=> a.date.localeCompare(b.date));
   return result;
+}
+
+// 依 allDates 對每個節點補齊缺失日為 100% 掉包
+function fillPerNodeMissingDaily(perNode, allDates, { globalFrequencies, globalGateways, expectedBaseline, fixedExpected, minExpected }) {
+  const freqTemplate = ensureFreqCountsTemplate(globalFrequencies || []);
+  const gwTemplate = ensureGatewayCountsTemplate(globalGateways || []);
+  for (const node of perNode) {
+    // 建立已存在日期集合
+    const exist = new Set(node.daily.map(d => d.date));
+    // 計算該 node 的 daily expected 中位數（>0）
+    const expectedSamples = node.daily.map(d => d.expected).filter(v => Number.isFinite(v) && v > 0);
+    const med = median(expectedSamples);
+    const baseline = expectedBaseline === 'per-node-daily-median' && Number.isFinite(med) ? Math.max(Math.floor(med), 1) : (fixedExpected || 1);
+    const baselineExpected = Math.max(baseline, minExpected || 1);
+    for (const day of allDates) {
+      if (exist.has(day)) continue;
+      const filled = {
+        date: day,
+        total: 0,
+        expected: baselineExpected,
+        lost: baselineExpected,
+        lossRate: 100,
+        avgRSSI: null,
+        avgSNR: null,
+        firstTime: null,
+        lastTime: null,
+        fcntSpan: -1,
+        duplicatePackets: 0,
+        totalWithDuplicates: 0,
+        resetCount: 0,
+        dataRatesUsed: [],
+        // frequency stats: 全為 0
+        frequenciesUsed: [],
+        frequencyCounts: cloneFreqTemplate(freqTemplate),
+        // gateway stats: 全為 0
+        gatewaysUsed: [],
+        gatewayCounts: cloneGatewayTemplate(gwTemplate),
+        noData: true,
+        expectedSource: (expectedBaseline === 'per-node-daily-median') ? 'baseline-median' : 'baseline-fixed',
+        baselineExpected
+      };
+      node.daily.push(filled);
+    }
+    // 重新排序 daily
+    node.daily.sort((a,b)=> a.date.localeCompare(b.date));
+  }
+}
+
+// 以補齊後的 perNode.daily 聚合 global.daily
+function aggregateGlobalDailyFromPerNode(perNode, allDates) {
+  const daily = [];
+  for (const day of allDates) {
+    let nodesWithData = 0;
+    let uniquePackets = 0;
+    let totalWithDuplicates = 0;
+    let expected = 0;
+    let lost = 0;
+    let resetCount = 0;
+    let duplicatePackets = 0;
+    let firstTime = null;
+    let lastTime = null;
+    const dataRates = new Set();
+    const gateways = new Set();
+
+    // 權重平均品質（以 totalWithDuplicates 作為權重）
+    let rssiSum = 0, rssiWeight = 0;
+    let snrSum = 0, snrWeight = 0;
+
+    for (const node of perNode) {
+      const d = node.daily.find(x => x.date === day);
+      if (!d) continue; // 理論上不會發生
+      if (!d.noData) nodesWithData += 1;
+      uniquePackets += d.total || 0;
+      totalWithDuplicates += d.totalWithDuplicates || 0;
+      expected += d.expected || 0;
+      lost += d.lost || 0;
+      resetCount += d.resetCount || 0;
+      duplicatePackets += d.duplicatePackets || 0;
+      if (d.firstTime) {
+        const ft = new Date(d.firstTime);
+        if (!firstTime || ft < firstTime) firstTime = ft;
+      }
+      if (d.lastTime) {
+        const lt = new Date(d.lastTime);
+        if (!lastTime || lt > lastTime) lastTime = lt;
+      }
+      if (Array.isArray(d.dataRatesUsed)) d.dataRatesUsed.forEach(r => dataRates.add(r));
+      if (Array.isArray(d.gatewaysUsed)) d.gatewaysUsed.forEach(g => gateways.add(g));
+      if (d.avgRSSI !== null && d.avgRSSI !== undefined) { rssiSum += d.avgRSSI * (d.totalWithDuplicates || 0); rssiWeight += (d.totalWithDuplicates || 0); }
+      if (d.avgSNR !== null && d.avgSNR !== undefined) { snrSum += d.avgSNR * (d.totalWithDuplicates || 0); snrWeight += (d.totalWithDuplicates || 0); }
+    }
+
+    const lossRate = expected > 0 ? (lost / expected) * 100 : -1;
+    daily.push({
+      date: day,
+      nodes: nodesWithData,
+      uniquePackets,
+      totalWithDuplicates,
+      expected,
+      lost,
+      lossRate,
+      avgRSSI: rssiWeight ? rssiSum / rssiWeight : null,
+      avgSNR: snrWeight ? snrSum / snrWeight : null,
+      firstTime: firstTime ? firstTime.toISOString() : null,
+      lastTime: lastTime ? lastTime.toISOString() : null,
+      fcntSpan: -1, // 保持簡化；如需更精確可改以 upRecords 重算
+      resetCount,
+      duplicatePackets,
+      dataRatesUsed: Array.from(dataRates).sort(),
+      gatewaysUsed: Array.from(gateways).sort()
+    });
+  }
+  return daily;
 }
 
 // =============================
@@ -880,9 +1048,21 @@ function calcGlobal(upRecords) {
 // =============================
 // Rule-based Classification → ThresholdView
 // =============================
-function buildThresholdView(perNode, classification, { upRecords = [], gapThresholdMinutes } = {}) {
+function buildThresholdView(perNode, classification, { upRecords = [], gapThresholdMinutes, endBoundary } = {}) {
   // 建立 lookup: per node daily metrics
   const dateNodeMap = new Map(); // date -> array of { nodeId, metrics }
+  // 計算整體最後時間（作為 Inactive Since 的基準）
+  let overallLastTime = null;
+  // 優先使用使用者設定的 End Date（若有）
+  if (endBoundary) {
+    overallLastTime = new Date(endBoundary);
+  } else if (upRecords && upRecords.length) {
+    // 否則使用資料中的最大時間
+    for (const r of upRecords) {
+      const t = new Date(r.Time);
+      if (!overallLastTime || t > overallLastTime) overallLastTime = t;
+    }
+  }
   
   // 先建立 devAddr -> records 的對應
   const nodeRecordsMap = new Map();
@@ -919,19 +1099,42 @@ function buildThresholdView(perNode, classification, { upRecords = [], gapThresh
           }
         }
       }
-      
-      dateNodeMap.get(day.date).push({
-        node,
-        day,
-        metrics: {
-          lossRate: day.lossRate,
-          resetCount: day.resetCount,
-          avgRSSI: day.avgRSSI,
-          avgSNR: day.avgSNR,
-          duplicatePackets: day.duplicatePackets,
-          maxGapMinutes: dailyMaxGapMinutes // 使用計算出的當日最大間隔（分鐘）
+
+      // 構建當日 metrics 並計算每日的例外命中（只考慮 resetCount 與 gap；不套用 inactiveSince 至 daily）
+      const metrics = {
+        lossRate: day.lossRate,
+        resetCount: day.resetCount,
+        avgRSSI: day.avgRSSI,
+        avgSNR: day.avgSNR,
+        duplicatePackets: day.duplicatePackets,
+        maxGapMinutes: dailyMaxGapMinutes
+      };
+      try {
+        const dailyMatches = getExceptionMatches(metrics, classification);
+        const labelMap = { resetCount: 'FCNT Reset', maxGapMinutes: 'No Data Gap', inactiveSinceMinutes: 'Inactive Since' };
+        const tags = Array.from(new Set(dailyMatches.map(m => m.metric)));
+        const labels = tags.map(t => labelMap[t] || String(t));
+        const noteMap = dailyMatches.reduce((acc, m) => {
+          if (!m.note) return acc;
+          (acc[m.metric] ||= []).push(m.note);
+          return acc;
+        }, {});
+        // 將每日例外資訊附加至原 day 物件，供 UI 於每日模式使用
+        if (labels.length) {
+          day.exceptionTags = tags;
+          day.exceptionLabels = labels;
+          if (Object.keys(noteMap).length) day.exceptionNoteMap = noteMap;
+        } else {
+          // 若無每日例外，確保為空以利前端判斷
+          day.exceptionTags = [];
+          day.exceptionLabels = [];
+          delete day.exceptionNoteMap;
         }
-      });
+      } catch (e) {
+        // 忽略每日例外計算錯誤
+      }
+
+      dateNodeMap.get(day.date).push({ node, day, metrics });
     }
   }
   
@@ -966,9 +1169,53 @@ function buildThresholdView(perNode, classification, { upRecords = [], gapThresh
       avgRSSI: node.total.avgRSSI,
       avgSNR: node.total.avgSNR,
       duplicatePackets: node.total.duplicatePackets,
-      maxGapMinutes: node.total.maxGapMinutes || -1 // Gap detection 結果（分鐘）
+      maxGapMinutes: node.total.maxGapMinutes || -1, // Gap detection 結果（分鐘）
+      // Inactive Since（分鐘）：節點最後上傳至整體最後時間
+      inactiveSinceMinutes: (() => {
+        try {
+          if (!overallLastTime) return undefined;
+          const nodeLastIso = node.timeline?.lastTime;
+          if (!nodeLastIso) return undefined;
+          const nodeLast = new Date(nodeLastIso);
+          const diff = (overallLastTime - nodeLast) / 60000;
+          return Number.isFinite(diff) ? Math.max(0, diff) : undefined;
+        } catch (e) { return undefined; }
+      })()
     };
     const category = classifyMetrics(totalMetrics, classification);
+
+    // 計算所有命中的 Exception 類型，並存到節點上供 UI 顯示
+    try {
+      const exceptionMatches = getExceptionMatches(totalMetrics, classification);
+      // 以 metric 名稱作為 tags
+      const exceptionTags = Array.from(new Set(exceptionMatches.map(m => m.metric)));
+      // 轉換為可讀標籤
+      const labelMap = {
+        resetCount: 'FCNT Reset',
+        maxGapMinutes: 'No Data Gap',
+        inactiveSinceMinutes: 'Inactive Since'
+      };
+      const exceptionLabels = exceptionTags.map(t => labelMap[t] || String(t));
+      // 可選：附上說明（來自 rule.note）
+      const exceptionNotes = exceptionMatches.map(m => m.note).filter(Boolean);
+      // 依 metric 聚合 notes 以便 tooltip 顯示
+      const exceptionNoteMap = exceptionMatches.reduce((acc, m) => {
+        if (!m.note) return acc;
+        if (!acc[m.metric]) acc[m.metric] = [];
+        acc[m.metric].push(m.note);
+        return acc;
+      }, {});
+      // 將結果掛到 node.total，以便前端表格取用
+      if (node && node.total) {
+        node.total.exceptionTags = exceptionTags;
+        node.total.exceptionLabels = exceptionLabels;
+        if (exceptionNotes.length) node.total.exceptionNotes = exceptionNotes;
+        if (Object.keys(exceptionNoteMap).length) node.total.exceptionNoteMap = exceptionNoteMap;
+      }
+    } catch (e) {
+      // 安全防護：即便失敗也不影響原有分類流程
+      // console.warn('[Analytics] getExceptionMatches failed:', e);
+    }
     const name = node.id.devName || node.id.devAddr;
     
     // Debug: 記錄 gap 相關的分類資訊
@@ -1035,6 +1282,24 @@ function extractThresholdHints(classification) {
   return { thresholdValue, exceptionResetThreshold, exceptionRule };
 }
 
+// 列舉所有命中的 Exception 規則（用於顯示多例外類型）
+function getExceptionMatches(metrics, classification) {
+  const matches = [];
+  if (!classification || !Array.isArray(classification.rules)) return matches;
+  for (const rule of classification.rules) {
+    // 只收集 priority=1 或標記為 exception 的規則
+    const isExceptionRule = rule.priority === 1 || rule.category === 'exception';
+    if (!isExceptionRule) continue;
+    const v = metrics[rule.metric];
+    if (rule.metric === 'maxGapMinutes' && (v === undefined || v === null || v < 0)) continue; // 不適用
+    if (v === undefined || v === null || Number.isNaN(v)) continue;
+    if (ruleMatch(metrics, rule)) {
+      matches.push({ metric: rule.metric, op: rule.op, value: rule.value, note: rule.note });
+    }
+  }
+  return matches;
+}
+
 // =============================
 // Meta & TimeRange
 // =============================
@@ -1065,6 +1330,7 @@ function buildMeta({ version, excludedCount, filterWindow, timeRange, classifica
     lossRateScope: 'uplink-only',
     resetRule: 'any-decrease',
     classification,
+  dailyFill: normalizeDailyFill(),
     filterWindow: {
       start: filterWindow.start ? filterWindow.start.toISOString() : null,
       end: filterWindow.end ? filterWindow.end.toISOString() : null,

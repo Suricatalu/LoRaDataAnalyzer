@@ -19,17 +19,17 @@ function getDataTableConfig(tableType) {
     columnDefs: [
       // 數值欄位右對齊
       {
-        targets: [2, 3, 4, 7, 8, 9, 10], // Loss Rate, Avg RSSI, Avg SNR, FCNT Delta, Duplicate Count, Total Uplink Count, FCNT Reset Count
+        targets: [2, 4, 5, 8, 9, 10, 11], // Loss Rate, Avg RSSI, Avg SNR, FCNT Delta, Duplicate Count, Total Uplink Count, FCNT Reset Count
         className: 'dt-body-right'
       },
       // 時間欄位置中對齊
       {
-        targets: [5, 6], // First Uplink Time, Last Uplink Time
+        targets: [6, 7], // First Uplink Time, Last Uplink Time
         className: 'dt-body-center'
       },
-      // DevAddr 和 Used Data Rate 置中對齊
+      // DevAddr、Exception 和 Used Data Rate 置中對齊
       {
-        targets: [1, 11], // Devaddr, Used Data Rate
+        targets: [1, 3, 12], // Devaddr, Exception, Used Data Rate
         className: 'dt-body-center'
       }
     ],
@@ -63,6 +63,7 @@ function getDataTableConfig(tableType) {
       { title: "Devname", data: "devname" },
       { title: "Devaddr", data: "devaddr" },
       { title: "Loss Rate (%)", data: "lossRate" },
+      { title: "Exception", data: "exception" },
       { title: "Avg RSSI", data: "avgRSSI" },
       { title: "Avg SNR", data: "avgSNR" },
       { title: "First Uplink Time", data: "firstUplinkTime" },
@@ -123,7 +124,7 @@ function updateTableHeader(dataType) {
   
   if (dataType === 'nodeStats') {
     // v2 Node Statistics headers (perNode.total + timeline 部分欄位)
-  ['Devname', 'Devaddr', 'Loss Rate (%)', 'Avg RSSI', 'Avg SNR', 'First Uplink Time', 'Last Uplink Time', 'FCNT Delta', 'Duplicate Count', 'Total Uplink Count', 'FCNT Reset Count', 'Used Data Rate'].forEach(header => {
+  ['Devname', 'Devaddr', 'Loss Rate (%)', 'Exception', 'Avg RSSI', 'Avg SNR', 'First Uplink Time', 'Last Uplink Time', 'FCNT Delta', 'Duplicate Count', 'Total Uplink Count', 'FCNT Reset Count', 'Used Data Rate'].forEach(header => {
       const th = document.createElement('th');
       th.textContent = header;
       tr.appendChild(th);
@@ -193,7 +194,7 @@ function showNodeStatistics(nodeStats, selectedDate = null) {
       // If no data, show empty state
       const tr = document.createElement('tr');
       const td = document.createElement('td');
-      td.colSpan = 12; // Correct colspan for nodeStats
+  td.colSpan = 13; // Correct colspan for nodeStats (新增 Exception 欄)
       td.textContent = 'No Data Available';
       td.style.textAlign = 'center';
       td.style.padding = '20px';
@@ -255,10 +256,30 @@ function showNodeStatistics(nodeStats, selectedDate = null) {
           };
         }
 
+  // 例外顯示：若選了特定日期，只使用當日例外；未選日期才使用總覽例外
+  let exceptionLabels = [];
+  let exceptionTags = [];
+  let exceptionNoteMap = {};
+  if (selectedDate) {
+    const dailyStats = node.daily?.find(d => d.date === selectedDate);
+    if (dailyStats) {
+      exceptionLabels = Array.isArray(dailyStats.exceptionLabels) ? dailyStats.exceptionLabels : [];
+      exceptionTags = Array.isArray(dailyStats.exceptionTags) ? dailyStats.exceptionTags : [];
+      exceptionNoteMap = dailyStats.exceptionNoteMap || {};
+    }
+    // 不回退到 total，避免「當日 normal 仍顯示總體例外」
+  } else {
+    exceptionLabels = (node.total && Array.isArray(node.total.exceptionLabels)) ? node.total.exceptionLabels : [];
+    exceptionTags = (node.total && Array.isArray(node.total.exceptionTags)) ? node.total.exceptionTags : [];
+    exceptionNoteMap = (node.total && node.total.exceptionNoteMap) ? node.total.exceptionNoteMap : {};
+  }
+  const exCodeMap = { resetCount: 'RST', maxGapMinutes: 'GAP', inactiveSinceMinutes: 'INACT' };
+  const exColorMap = { resetCount: '#ff6b6b', maxGapMinutes: '#4dabf7', inactiveSinceMinutes: '#ffa94d' };
         const rowData = {
           Devname: devName,
           Devaddr: devAddr,
           'Loss Rate (%)': safeToFixed(statsData.lossRate, 2),
+          'Exception': exceptionLabels.length ? exceptionLabels.join(' | ') : '',
           'Avg RSSI': safeToFixed(statsData.avgRSSI, 2),
           'Avg SNR': safeToFixed(statsData.avgSNR, 2),
           'First Uplink Time': statsData.firstTime ? new Date(statsData.firstTime).toLocaleString() : '',
@@ -267,10 +288,10 @@ function showNodeStatistics(nodeStats, selectedDate = null) {
           'Duplicate Count': statsData.duplicatePackets ?? '',
           'Total Uplink Count': statsData.totalWithDuplicates ?? '',
           'FCNT Reset Count': statsData.resetCount ?? '',
-          'Used Data Rate': Array.from(statsData.dataRatesUsed).join(', ')
+    'Used Data Rate': Array.from(statsData.dataRatesUsed).join(', '),
         };
 
-  ['Devname', 'Devaddr', 'Loss Rate (%)', 'Avg RSSI', 'Avg SNR', 'First Uplink Time', 'Last Uplink Time', 'FCNT Delta', 'Duplicate Count', 'Total Uplink Count', 'FCNT Reset Count', 'Used Data Rate'].forEach(key => {
+  ['Devname', 'Devaddr', 'Loss Rate (%)', 'Exception', 'Avg RSSI', 'Avg SNR', 'First Uplink Time', 'Last Uplink Time', 'FCNT Delta', 'Duplicate Count', 'Total Uplink Count', 'FCNT Reset Count', 'Used Data Rate'].forEach(key => {
           const td = document.createElement('td');
           if (key === 'Devname') {
             const link = document.createElement('a');
@@ -280,6 +301,40 @@ function showNodeStatistics(nodeStats, selectedDate = null) {
             link.dataset.devname = rowData[key];
             link.dataset.devaddr = rowData['Devaddr'];
             td.appendChild(link);
+          } else if (key === 'Exception') {
+            // 以短代碼顯示，最多 2 個，其餘用 +N 表示；滑過顯示詳細說明
+            const labels = exceptionLabels;
+            const tags = exceptionTags;
+            if (labels.length) {
+              const items = labels.map((label, i) => ({
+                tag: tags[i], label,
+                code: exCodeMap[tags[i]] || (label.length > 6 ? label.slice(0,6).toUpperCase() : label.toUpperCase()),
+                notes: Array.isArray(exceptionNoteMap[tags[i]]) ? exceptionNoteMap[tags[i]] : []
+              }));
+              const container = document.createElement('div');
+              container.style.display = 'flex';
+              container.style.flexWrap = 'wrap';
+              container.style.gap = '4px';
+
+              // 顯示所有短代碼徽章
+              items.forEach(it => {
+                const span = document.createElement('span');
+                span.textContent = it.code;
+                span.style.padding = '1px 6px';
+                span.style.borderRadius = '10px';
+                span.style.fontSize = '12px';
+                span.style.background = 'rgba(255,255,255,0.08)';
+                span.style.border = `1px solid ${exColorMap[it.tag] || 'rgba(255,255,255,0.35)'}`;
+                span.style.color = exColorMap[it.tag] || '#ddd';
+                // Tooltip：顯示完整標籤與規則說明
+                const tipLines = [it.label].concat(it.notes || []);
+                span.title = tipLines.join('\n');
+                container.appendChild(span);
+              });
+              td.appendChild(container);
+            } else {
+              td.textContent = '';
+            }
           } else {
             td.textContent = (rowData[key] !== undefined && rowData[key] !== null) ? rowData[key] : '';
           }
@@ -353,10 +408,45 @@ function showNodeStatistics(nodeStats, selectedDate = null) {
           };
         }
 
+        // 例外顯示：若選了特定日期，只使用當日例外；未選日期才使用總覽例外
+        let exceptionLabels = [];
+        let exceptionTags = [];
+        let exceptionNoteMap = {};
+        if (selectedDate) {
+          const dailyStats = node.daily?.find(d => d.date === selectedDate);
+          if (dailyStats) {
+            exceptionLabels = Array.isArray(dailyStats.exceptionLabels) ? dailyStats.exceptionLabels : [];
+            exceptionTags = Array.isArray(dailyStats.exceptionTags) ? dailyStats.exceptionTags : [];
+            exceptionNoteMap = dailyStats.exceptionNoteMap || {};
+          }
+          // 不回退到 total，避免「當日 normal 仍顯示總體例外」
+        } else {
+          exceptionLabels = (node.total && Array.isArray(node.total.exceptionLabels)) ? node.total.exceptionLabels : [];
+          exceptionTags = (node.total && Array.isArray(node.total.exceptionTags)) ? node.total.exceptionTags : [];
+          exceptionNoteMap = (node.total && node.total.exceptionNoteMap) ? node.total.exceptionNoteMap : {};
+        }
+        const exCodeMap = { resetCount: 'RST', maxGapMinutes: 'GAP', inactiveSinceMinutes: 'INACT' };
+        const exColorMap = { resetCount: '#ff6b6b', maxGapMinutes: '#4dabf7', inactiveSinceMinutes: '#ffa94d' };
+        function exceptionBadgesHTML(tags, labels, noteMap) {
+          if (!labels || !labels.length) return '';
+          const items = labels.map((label, i) => ({
+            tag: tags[i],
+            label,
+            code: exCodeMap[tags[i]] || (label.length > 6 ? label.slice(0,6).toUpperCase() : label.toUpperCase()),
+            notes: Array.isArray(noteMap && noteMap[tags[i]]) ? noteMap[tags[i]] : []
+          }));
+          const spans = items.map(it => {
+            const tip = [it.label].concat(it.notes || []).join('&#10;');
+            const color = exColorMap[it.tag] || '#ddd';
+            return `<span title="${tip}" style="padding:1px 6px;border-radius:10px;font-size:12px;background:rgba(255,255,255,0.08);border:1px solid ${color};color:${color};margin-right:4px;display:inline-block;">${it.code}</span>`;
+          }).join('');
+          return `<div style="display:flex;flex-wrap:wrap;gap:4px;">${spans}</div>`;
+        }
         return {
           devname: `<a href="#" class="devname-link" data-devname="${devName}" data-devaddr="${devAddr}">${devName}</a>`,
           devaddr: devAddr,
           lossRate: safeToFixed(statsData.lossRate, 2),
+          exception: exceptionBadgesHTML(exceptionTags, exceptionLabels, exceptionNoteMap),
           avgRSSI: safeToFixed(statsData.avgRSSI, 2),
           avgSNR: safeToFixed(statsData.avgSNR, 2),
           firstUplinkTime: statsData.firstTime ? new Date(statsData.firstTime).toLocaleString() : '',

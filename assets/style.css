@@ -1,3 +1,28 @@
+/* Exception compact badges */
+.ex-badge {
+    display: inline-block;
+    padding: 1px 6px;
+    border-radius: 10px;
+    font-size: 12px;
+    line-height: 1.4;
+    margin-left: 6px;
+    vertical-align: middle;
+    background: rgba(255,255,255,0.08);
+    border: 1px solid rgba(255,255,255,0.35);
+    color: #ddd;
+}
+.ex-badge.rst {
+    border-color: #ff6b6b;
+    color: #ff6b6b;
+}
+.ex-badge.gap {
+    border-color: #4dabf7;
+    color: #4dabf7;
+}
+.ex-badge.inact {
+    border-color: #ffa94d;
+    color: #ffa94d;
+}
 /* WISE6610 Data Analyzer - Optimized CSS */
 /* Remove duplicate styles for better maintainability */
 
@@ -276,9 +301,14 @@ section:hover {
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 15px;
     overflow: hidden;
     padding: 10px;
+}
+
+/* Tighten the title spacing inside Sector 1 */
+#sector1 h2 {
+    margin: 8px 0 6px 0; /* add a bit more top spacing without enlarging gap to chart */
+    line-height: 1.25;
 }
 
 #sector1 .controls-container {
@@ -333,12 +363,13 @@ section:hover {
     background-color: var(--bg-hover);
 }
 
-.chart-container {
+/* Let the chart dynamically fill remaining space in Sector 1 */
+#sector1 .chart-container {
     width: 100%;
-    height: calc(100% - 75px); /* Adjust for more accurate height calculation */
+    height: auto; /* remove fixed calc height to avoid excessive gap */
     display: flex;
     flex: 1;
-    min-height: 250px; /* Ensure minimum height */
+    min-height: 300px; /* ensure a comfortable minimum */
     position: relative;
 }
 
@@ -1075,7 +1106,8 @@ table.dataTable.nowrap td {
         width: 150px;
     }
     
-    .chart-container {
+    /* Keep mobile sizing specific to Sector 1 to override the base rule above */
+    #sector1 .chart-container {
         height: 280px;
         min-height: 280px;
     }

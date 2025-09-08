@@ -84,14 +84,25 @@
                     <h3>Optional Factor (Exception)</h3>
                     <div class="setting-row">
                         <label class="setting-label"><input type="checkbox" id="useFcntIssue" class="include-flag" /> FCNT Drop / Reset Issue
+                            <span class="ex-badge rst" title="FCNT Reset / Drop">RST</span>
                             <span class="help-icon" data-tip="Enable to only include nodes that had frame counter drop or reset events.">?</span>
                         </label>
                         <input type="number" id="fcntrIssueThreshold" min="0" value="1" step="1" placeholder="e.g. 1" />
                     </div>
-
+                    
+                    <!-- Inactive Since (overall end vs node last upload) -->
+                    <div class="setting-row">
+                        <label class="setting-label"><input type="checkbox" id="useInactiveSince" class="include-flag" /> Inactive Since (minutes)
+                            <span class="ex-badge inact" title="Inactive Since">INACT</span>
+                            <span class="help-icon" data-tip="Mark nodes whose last upload till the overall last timestamp exceeds this number of minutes when enabled.">?</span>
+                        </label>
+                        <input type="number" id="inactiveSinceMinutes" min="0" value="60" step="1" placeholder="e.g. 60" />
+                    </div>
+                    
                     <!-- Max Gap >= N Minutes Filter (checkbox inside label, on left) -->
                     <div class="setting-row">
                         <label class="setting-label"><input type="checkbox" id="useNoDataDuration" class="include-flag" /> No Data Gap (minutes)
+                            <span class="ex-badge gap" title="No Data Gap">GAP</span>
                             <span class="help-icon" data-tip="Find nodes that had no data for a continuous gap longer than this number of minutes when enabled.">?</span>
                         </label>
                         <input type="number" id="noDataDuration" min="0" value="30" step="1" placeholder="e.g. 30" />
