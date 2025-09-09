@@ -83,6 +83,7 @@ node test-parser.js --batch
 - Gap 偵測（選配）：可記錄時間間隔超過閾值的上下邊界 Fcnt 與時間
 - Sentinel 與 Null 規範：`lossRate = -1` 代表不可計算、`avgRSSI = null` 代表無樣本
 - 完全瀏覽器端運算：隱私與快速迭代友善
+- 可選時區(Timezone) 篩選：時間視窗輸入支援自訂時區（預設為瀏覽器自動偵測），不會因重新上傳 CSV 而自動變更。
 
 ## 📁 文件結構
 
@@ -146,6 +147,7 @@ WISE6610DataAnalyzer_Front/
 3. 統計階段：`data-processor-analytics.js` 產出 `analytics`
 4. 規則分類：於統計中套用 `meta.classification.rules`
 5. UI 呈現：`chart-manager.js` 與 `table-manager.js` 根據最新 `analytics` 重繪
+ 6. （可選）調整 Timezone 下拉：改變之後，時間篩選區間的解析與顯示將以該時區解讀。
 
 ## 圖表與表格
 

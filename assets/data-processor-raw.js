@@ -163,15 +163,60 @@ function parseFrameType(raw) {
  * @param {string} raw
  * @returns {Date}
  */
-function parseTime(raw) {
+// ===== 時區工具 =====
+function pad2(n){return n<10?'0'+n:''+n;}
+function formatIsoLocal(y,M,d,h,m,s){return `${y}-${pad2(M)}-${pad2(d)}T${pad2(h)}:${pad2(m)}:${pad2(s)}:00`;}
+
+/**
+ * 將「沒有時區資訊的字串時間」(naive) 視為指定 IANA 時區的地方時間，轉為對應的 UTC Date 物件。
+ * 參考演算法：建立 UTC 猜測值，反覆修正至 formatToParts() 於該時區輸出之年月日時分秒與目標一致。
+ * @param {number} Y
+ * @param {number} M 1-12
+ * @param {number} D
+ * @param {number} h
+ * @param {number} m
+ * @param {number} s
+ * @param {string} tz IANA timezone
+ */
+function naivePartsToDateInTZ(Y,M,D,h,m,s,tz){
+  // 初始猜測：假設此一組時間就是 UTC
+  let guess = new Date(Date.UTC(Y,M-1,D,h,m,s,0));
+  try {
+    const fmt = new Intl.DateTimeFormat('en-CA',{timeZone:tz,year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false});
+    for (let i=0;i<5;i++) { // 最多修正 5 次 (DST 邊界通常 2 次內收斂)
+      const parts = fmt.formatToParts(guess).reduce((acc,p)=>{acc[p.type]=p.value;return acc;},{});
+      const curY = Number(parts.year), curM=Number(parts.month), curD=Number(parts.day), curH=Number(parts.hour), curMin=Number(parts.minute), curS=Number(parts.second);
+      if (curY===Y && curM===M && curD===D && curH===h && curMin===m && curS===s) break; // 已匹配
+      // 將「目前時區表示」與「目標本地時間」轉為 minutes 比較差異
+      const targetMinutes = Date.UTC(Y,M-1,D,h,m,s)/60000;
+      const currentMinutes = Date.UTC(curY,curM-1,curD,curH,curMin,curS)/60000;
+      const diffMin = targetMinutes - currentMinutes;
+      if (!diffMin) break;
+      guess = new Date(guess.getTime() + diffMin*60000);
+    }
+  } catch(e) { /* 若不支援該時區，保留 guess */ }
+  return guess;
+}
+
+/**
+ * 專用解析時間：
+ * - 若提供 options.timezone 則將字串按該時區解讀；否則維持原本 (本地系統) 解析。
+ * - 支援格式：YYYY-MM-DD HH:mm:ss (naive)、或任何 Date 可解析字串。
+ * @param {string} raw
+ * @param {string} [timezone]
+ */
+function parseTime(raw, timezone) {
   if (!raw) return new Date();
   const t = raw.trim();
-  // 原本版本強制把 'YYYY-MM-DD HH:mm:ss' 視為 UTC 並加 'Z'，導致顯示時區偏移 (+8h 等)
-  // 這裡改為：若符合純日期時間格式，視為「本地時間」建立 Date 物件，不再附加 'Z'。
-  if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(t)) {
+  const naiveMatch = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(t);
+  if (naiveMatch) {
     const [datePart, timePart] = t.split(' ');
     const [Y, M, D] = datePart.split('-').map(Number);
     const [h, m, s] = timePart.split(':').map(Number);
+    if (timezone) {
+      return naivePartsToDateInTZ(Y,M,D,h,m,s,timezone);
+    }
+    // 無指定時區 → 以系統本地時間建 Date
     return new Date(Y, M - 1, D, h, m, s);
   }
   const d = new Date(t);
@@ -231,7 +276,7 @@ function parseMacList(raw) {
  * @param {Object} rowObj - key 已標準化
  * @returns {RawRecord|null}
  */
-function transformRow(rowObj) {
+function transformRow(rowObj, timezone) {
   // helper to try multiple possible keys in priority order
   function getField(obj, ...keys) {
     for (const k of keys) {
@@ -250,7 +295,7 @@ function transformRow(rowObj) {
 
   /** @type {RawRecord} */
   const rec = {
-    Time: parseTime(getField(rowObj, 'Time', 'Received')),
+  Time: parseTime(getField(rowObj, 'Time', 'Received'), timezone),
     Devname: devName,
     Devaddr: devAddr,
     Fcnt: parseIntOrNaN(getField(rowObj, 'Fcnt', 'FCnt')),
@@ -277,6 +322,7 @@ function transformRow(rowObj) {
  * @returns {RawRecord[]}
  */
 function parseCSVRaw(csvText, opts = {}) {
+  const timezone = opts.timezone; // IANA timezone from UI (例如 'Asia/Taipei')
   const rows = parseCSVRows(csvText);
   if (rows.length === 0) return [];
 
@@ -294,7 +340,7 @@ function parseCSVRaw(csvText, opts = {}) {
       rowObj[headerKey] = line[c];
     }
     try {
-      const rec = transformRow(rowObj);
+  const rec = transformRow(rowObj, timezone);
       if (rec) records.push(rec);
       else if (opts.onRowError) opts.onRowError(i + 1, 'Missing required Devname or Devaddr');
     } catch (err) {

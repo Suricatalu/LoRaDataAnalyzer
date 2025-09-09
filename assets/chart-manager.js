@@ -294,13 +294,32 @@ function renderDailyGapBarChart(node) {
     if (nodeDailyGapBarChart) { nodeDailyGapBarChart.destroy(); nodeDailyGapBarChart = null; }
     return;
   }
-  const labels = []; const values = [];
+  // 取得使用者設定的時間區間 (startDate/endDate) 以限制 x 軸顯示範圍
+  let timeFilter = {};
+  try { if (window.getTimeRangeFilter) timeFilter = window.getTimeRangeFilter() || {}; } catch(e) { /* ignore */ }
+  const startMs = timeFilter.start instanceof Date && !isNaN(timeFilter.start) ? timeFilter.start.getTime() : null;
+  const endMs = timeFilter.end instanceof Date && !isNaN(timeFilter.end) ? timeFilter.end.getTime() : null;
+
+  // 收集 (日期, 值)；即使沒有 gap (maxGapMinutes 為 null/undefined/負數) 也顯示為 0
+  const dayPairs = [];
   node.daily.forEach(day => {
-    if (typeof day.maxGapMinutes === 'number' && day.maxGapMinutes >= 0) {
-      labels.push(day.date);
-      values.push(day.maxGapMinutes);
+    if (!day || !day.date || !/\d{4}-\d{2}-\d{2}/.test(day.date)) return; // 日期格式錯誤則跳過
+    let dayStart = new Date(day.date + 'T00:00:00');
+    let dayEnd = new Date(day.date + 'T23:59:59.999');
+    if (startMs != null || endMs != null) {
+      if (isNaN(dayStart)) return; // 無法解析日期
+      const ds = dayStart.getTime();
+      const de = isNaN(dayEnd) ? (ds + 86400000 - 1) : dayEnd.getTime();
+      if (startMs != null && de < startMs) return; // 超出範圍 (在 start 之前)
+      if (endMs != null && ds > endMs) return;     // 超出範圍 (在 end 之後)
     }
+    const rawVal = typeof day.maxGapMinutes === 'number' && day.maxGapMinutes > 0 ? day.maxGapMinutes : 0;
+    dayPairs.push({ date: day.date, value: rawVal });
   });
+  // 依日期排序 (確保 x 軸順序一致)
+  dayPairs.sort((a,b) => a.date.localeCompare(b.date));
+  const labels = dayPairs.map(p => p.date);
+  const values = dayPairs.map(p => p.value);
   if (!labels.length) { if (nodeDailyGapBarChart) { nodeDailyGapBarChart.destroy(); nodeDailyGapBarChart=null; } return; }
   if (nodeDailyGapBarChart) nodeDailyGapBarChart.destroy();
   const ctx = canvas.getContext('2d');

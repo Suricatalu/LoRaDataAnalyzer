@@ -11,10 +11,13 @@
   }
 
   function toDateKeyUTC(date) {
-    // YYYY-MM-DD in UTC
+    // 已改為回傳『本地時區』的 YYYY-MM-DD（原本使用 UTC 造成每日統計切割錯誤）
     const d = toDate(date);
     if (!d || isNaN(d)) return null;
-    return d.toISOString().slice(0, 10);
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
   }
 
   function uniqSorted(arr, mapFn) {
@@ -214,7 +217,8 @@
       const totalGw = computeGatewaysForRecords(recs, globalGateways);
 
       // compute daily groups and their frequency stats
-      const groupedByDay = groupBy(recs, (r) => toDateKeyUTC(r.Time) || 'unknown');
+  // 以『本地時區』日期分組（避免使用 UTC 造成跨日錯誤）
+  const groupedByDay = groupBy(recs, (r) => toDateKeyUTC(r.Time) || 'unknown');
       const daily = [];
       for (const [day, dayRecs] of groupedByDay.entries()) {
         const dayTotals = computeBasicNodeTotals(dayRecs);
@@ -343,6 +347,7 @@ function buildAnalytics(records, options = {}) {
   const classification = options.classification || DEFAULT_CLASSIFICATION;
   const gapThresholdMinutes = typeof options.gapThresholdMinutes === 'number' && options.gapThresholdMinutes > 0 ? options.gapThresholdMinutes : undefined;
   const dailyFill = normalizeDailyFill(options.dailyFill);
+  const timezone = options.timezone; // 由 UI 時區選擇傳入 (IANA)
 
   
 
@@ -362,10 +367,16 @@ function buildAnalytics(records, options = {}) {
   const nodeMap = groupByNode(upRecords);
 
   // 4. 計算 perNode 統計
-  const perNode = Array.from(nodeMap.values()).map(entry => calcNodeStat(entry, { gapThresholdMinutes, globalFrequencies, globalGateways, startBoundary: fw.start }));
+  const perNode = Array.from(nodeMap.values()).map(entry => calcNodeStat(entry, { 
+    gapThresholdMinutes, 
+    globalFrequencies, 
+    globalGateways, 
+    startBoundary: fw.start, 
+    endBoundary: fw.end 
+  }));
 
   // 4.A 無資料日補齊（依 timeRange 內所有日期）
-  const timeRange = calcTimeRange(filteredRecords);
+  const timeRange = calcTimeRange(filteredRecords, timezone);
   const allDates = buildDateList(timeRange.start, timeRange.end);
   if (dailyFill.enabled && perNode.length && allDates.length) {
     fillPerNodeMissingDaily(perNode, allDates, {
@@ -400,7 +411,7 @@ function buildAnalytics(records, options = {}) {
   }
 
   // 5. 全域統計 (重跑一次)
-  let global = calcGlobal(upRecords);
+  let global = calcGlobal(upRecords, timezone);
   // attach frequenciesUsed baseline to global.total
   global.total.frequenciesUsed = globalFrequencies;
   // attach gatewaysUsed baseline to global.total
@@ -414,10 +425,10 @@ function buildAnalytics(records, options = {}) {
   }
 
   // 6. 推導每日 threshold 三分類視圖 (rule-based -> 三類)
-  const threshold = buildThresholdView(perNode, classification, { upRecords, gapThresholdMinutes, endBoundary: fw.end });
+  const threshold = buildThresholdView(perNode, classification, { upRecords, gapThresholdMinutes, endBoundary: fw.end, timezone });
 
   // 7. Meta
-  const meta = buildMeta({ version, excludedCount, filterWindow: fw, timeRange, classification, dailyFill });
+  const meta = buildMeta({ version, excludedCount, filterWindow: fw, timeRange, classification, dailyFill, timezone });
 
   // 輸出當前使用的分類配置
   console.log('[Analytics] Current Classification Config:', classification);
@@ -510,7 +521,28 @@ function buildAnalytics(records, options = {}) {
 // =============================
 // 工具: 時間 / 分組
 // =============================
-function toDateKey(d) { return d.toISOString().slice(0,10); }
+// 以本地時區產生 YYYY-MM-DD（避免 UTC 造成日期偏移）
+function toDateKey(d) {
+  if (!(d instanceof Date)) d = new Date(d);
+  if (!d || isNaN(d)) return null;
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+// 依指定時區擷取 YYYY-MM-DD，若失敗退回 UTC key
+function toDateKeyTZ(date, timezone) {
+  if (!date) return null;
+  const d = (date instanceof Date) ? date : new Date(date);
+  if (!d || isNaN(d)) return null;
+  if (!timezone) return d.toISOString().slice(0,10);
+  try {
+    const fmt = new Intl.DateTimeFormat('en-CA', { timeZone: timezone, year: 'numeric', month: '2-digit', day: '2-digit' });
+    return fmt.format(d); // en-CA -> YYYY-MM-DD
+  } catch (e) {
+    return d.toISOString().slice(0,10);
+  }
+}
 function isValidNumber(n) { return typeof n === 'number' && !Number.isNaN(n); }
 
 // ========== Frequency helpers ==========
@@ -629,14 +661,16 @@ function normalizeDailyFill(fill = {}) {
 
 function buildDateList(startISO, endISO) {
   if (!startISO || !endISO) return [];
-  const startKey = startISO.slice(0,10);
-  const endKey = endISO.slice(0,10);
-  const days = dateDiffDays(startKey, endKey) + 1;
+  const start = new Date(startISO);
+  const end = new Date(endISO);
+  if (isNaN(start) || isNaN(end)) return [];
+  // 取本地日期部分
   const list = [];
-  let t = Date.parse(startKey + 'T00:00:00Z');
-  for (let i=0; i<days; i++) {
-    const d = new Date(t + i*86400000).toISOString().slice(0,10);
-    list.push(d);
+  let cur = new Date(start.getFullYear(), start.getMonth(), start.getDate(), 0,0,0,0);
+  const endDay = new Date(end.getFullYear(), end.getMonth(), end.getDate(), 0,0,0,0);
+  while (cur <= endDay) {
+    list.push(toDateKey(cur));
+    cur = new Date(cur.getFullYear(), cur.getMonth(), cur.getDate() + 1, 0,0,0,0);
   }
   return list;
 }
@@ -679,7 +713,7 @@ function groupByNode(upRecords) {
 // =============================
 // 核心計算：節點統計
 // =============================
-function calcNodeStat(entry, { gapThresholdMinutes, globalFrequencies, globalGateways, startBoundary } = {}) {
+function calcNodeStat(entry, { gapThresholdMinutes, globalFrequencies, globalGateways, startBoundary, endBoundary, timezone } = {}) {
   const records = entry.records.slice().sort((a,b)=>a.Time - b.Time);
   // Quality 只看上行 (已過濾)；RSSI/SNR NaN 不算
   const qualityAgg = { rssiSum:0, rssiCount:0, snrSum:0, snrCount:0 };
@@ -733,7 +767,7 @@ function calcNodeStat(entry, { gapThresholdMinutes, globalFrequencies, globalGat
     if (!gapCount) maxGapMinutes = -1;
   }
 
-  const daily = buildNodeDaily(records, gapThresholdMinutes, globalFrequencies, globalGateways);
+  const daily = buildNodeDaily(records, gapThresholdMinutes, globalFrequencies, globalGateways, startBoundary, endBoundary, timezone);
 
   // compute frequency and gateway stats for total
   const freqStats = computeFrequenciesForRecords(records, globalFrequencies);
@@ -811,11 +845,11 @@ function computeCounters(fcntRecords) {
   return { uniquePackets, totalWithDuplicates, duplicatePackets, expected, lost, lossRate, resetCount, fcntSpan, firstTime, lastTime };
 }
 
-function buildNodeDaily(allRecords, gapThresholdMinutes, globalFrequencies, globalGateways) {
+function buildNodeDaily(allRecords, gapThresholdMinutes, globalFrequencies, globalGateways, startBoundary, endBoundary, timezone) {
   // allRecords 已是該節點上行；須重新 grouping by date
   const byDate = new Map();
   for (const r of allRecords) {
-    const key = toDateKey(r.Time);
+    const key = timezone ? toDateKeyTZ(r.Time, timezone) : toDateKey(r.Time);
     if (!byDate.has(key)) byDate.set(key, []);
     byDate.get(key).push(r);
   }
@@ -843,9 +877,46 @@ function buildNodeDaily(allRecords, gapThresholdMinutes, globalFrequencies, glob
       const thresholdMs = gapThresholdMinutes * 60 * 1000;
 
       if (recs.length) {
-        // 建立當日 00:00:00 與 23:59:59 (UTC 基準) 邊界
-        const dayStart = new Date(date + 'T00:00:00.000Z');
-        const dayEnd = new Date(dayStart.getTime() + 86399000); // 23:59:59.000
+  // 建立當日 00:00:00 與 23:59:59 『本地時區』邊界；首日/末日需使用使用者指定的 start/end 邊界
+  // 原實作使用 'YYYY-MM-DDT00:00:00.000Z' 造成以 UTC 為基準，於 GMT+8 會將日內起點誤移到早上 08:00，
+  // 進而製造出 (本地 00:00 ~ 08:00) 的假 GAP。改為使用 new Date(y, m-1, d, 0,0,0,0) 產生本地午夜。
+  const [y,m,d] = date.split('-').map(Number);
+  function buildDayBoundary(y,M,D,h,mi,s){
+    if(!timezone) return new Date(y,M-1,D,h,mi,s,0);
+    // 近似 raw parser 反推法
+    let guess = new Date(Date.UTC(y,M-1,D,h,mi,s,0));
+    try{const fmt=new Intl.DateTimeFormat('en-CA',{timeZone:timezone,year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false});
+      for(let i=0;i<4;i++){
+        const parts=fmt.formatToParts(guess).reduce((a,p)=>{a[p.type]=p.value;return a;},{});
+        const cy=+parts.year,cM=+parts.month,cD=+parts.day,ch=+parts.hour,cmi=+parts.minute,cs=+parts.second;
+        if(cy===y && cM===M && cD===D && ch===h && cmi===mi && cs===s) break;
+        const target=Date.UTC(y,M-1,D,h,mi,s)/60000; const current=Date.UTC(cy,cM-1,cD,ch,cmi,cs)/60000; const diff=target-current; if(!diff) break; guess=new Date(guess.getTime()+diff*60000);
+      }
+    }catch(e){}
+    return guess;
+  }
+  let dayStart = buildDayBoundary(y,m,d,0,0,0);           // 時區午夜
+  let dayEnd = buildDayBoundary(y,m,d,23,59,59);          // 時區日終
+        try {
+          if (startBoundary instanceof Date && !isNaN(startBoundary)) {
+            const startKey = startBoundary.toISOString().slice(0,10);
+            if (startKey === date) {
+              // 使用者選擇的起始時間落在此日，改採該時間為日內起點
+              dayStart = new Date(startBoundary);
+            }
+          }
+          if (endBoundary instanceof Date && !isNaN(endBoundary)) {
+            const endKey = endBoundary.toISOString().slice(0,10);
+            if (endKey === date) {
+              // 使用者選擇的結束時間落在此日，改採該時間為日內終點
+              dayEnd = new Date(endBoundary);
+            }
+          }
+          // 保護：若使用者設定導致 dayEnd < dayStart，交換避免負數 gap
+          if (dayEnd < dayStart) {
+            const tmp = dayStart; dayStart = dayEnd; dayEnd = tmp;
+          }
+        } catch(e) { /* ignore boundary adjust errors */ }
 
         // 邊界 -> 第一筆
         const firstRec = recs[0];
@@ -1043,7 +1114,7 @@ function aggregateGlobalDailyFromPerNode(perNode, allDates) {
 // =============================
 // Global 統計
 // =============================
-function calcGlobal(upRecords) {
+function calcGlobal(upRecords, timezone) {
   const recs = upRecords.slice().sort((a,b)=>a.Time - b.Time);
   const fcntRecords = [];
   const qualityAgg = { rssiSum:0, rssiCount:0, snrSum:0, snrCount:0 };
@@ -1061,7 +1132,7 @@ function calcGlobal(upRecords) {
   // Daily：將所有上行依日期拆分後，針對每日期重跑 global-like 計算
   const byDate = new Map();
   for (const r of recs) {
-    const key = toDateKey(r.Time);
+    const key = timezone ? toDateKeyTZ(r.Time, timezone) : toDateKey(r.Time);
     if (!byDate.has(key)) byDate.set(key, []);
     byDate.get(key).push(r);
   }
@@ -1123,7 +1194,7 @@ function calcGlobal(upRecords) {
 // =============================
 // Rule-based Classification → ThresholdView
 // =============================
-function buildThresholdView(perNode, classification, { upRecords = [], gapThresholdMinutes, endBoundary } = {}) {
+function buildThresholdView(perNode, classification, { upRecords = [], gapThresholdMinutes, endBoundary, timezone } = {}) {
   // 建立 lookup: per node daily metrics
   const dateNodeMap = new Map(); // date -> array of { nodeId, metrics }
   // 計算整體最後時間（作為 Inactive Since 的基準）
@@ -1159,7 +1230,10 @@ function buildThresholdView(perNode, classification, { upRecords = [], gapThresh
       let dailyMaxGapMinutes = (typeof day.maxGapMinutes === 'number') ? day.maxGapMinutes : -1;
       if (gapThresholdMinutes && dailyMaxGapMinutes === -1) {
         const gapThresholdMs = gapThresholdMinutes * 60000; // 轉換為毫秒用於計算
-        const dayRecords = nodeRecords.filter(r => new Date(r.Time).toISOString().split('T')[0] === day.date);
+        const dayRecords = nodeRecords.filter(r => {
+          const key = timezone ? toDateKeyTZ(new Date(r.Time), timezone) : new Date(r.Time).toISOString().split('T')[0];
+          return key === day.date;
+        });
         if (dayRecords.length > 1) {
           dayRecords.sort((a, b) => new Date(a.Time) - new Date(b.Time));
           for (let i = 0; i < dayRecords.length - 1; i++) {
@@ -1218,7 +1292,7 @@ function buildThresholdView(perNode, classification, { upRecords = [], gapThresh
       
       // Debug: 記錄每日 gap 相關的分類資訊
       if (gapThresholdMinutes && item.metrics.maxGapMinutes > -1) {
-        console.log(`[Analytics] Node ${name} daily gap on ${date}: ${item.metrics.maxGapMinutes} min, category: ${category}`);
+        // console.log(`[Analytics] Node ${name} daily gap on ${date}: ${item.metrics.maxGapMinutes} min, category: ${category}`);
       }
       
       if (category === 'normal') normal.push(name);
@@ -1290,7 +1364,7 @@ function buildThresholdView(perNode, classification, { upRecords = [], gapThresh
     
     // Debug: 記錄 gap 相關的分類資訊
     if (gapThresholdMinutes && node.total.maxGapMinutes > -1) {
-      console.log(`[Analytics] Node ${name} total gap: ${node.total.maxGapMinutes} min, category: ${category}`);
+      // console.log(`[Analytics] Node ${name} total gap: ${node.total.maxGapMinutes} min, category: ${category}`);
     }
     
     if (category === 'normal') totalNormal.push(name);
@@ -1373,26 +1447,28 @@ function getExceptionMatches(metrics, classification) {
 // =============================
 // Meta & TimeRange
 // =============================
-function calcTimeRange(records) {
+function calcTimeRange(records, timezone) {
   if (!records.length) return { start: null, end: null, days: 0 };
   let min = records[0].Time, max = records[0].Time;
   for (const r of records) {
     if (r.Time < min) min = r.Time;
     if (r.Time > max) max = r.Time;
   }
-  const startKey = toDateKey(min);
-  const endKey = toDateKey(max);
-  const days = dateDiffDays(startKey, endKey) + 1; // inclusive
+  const startKey = timezone ? toDateKeyTZ(min, timezone) : toDateKey(min);
+  const endKey = timezone ? toDateKeyTZ(max, timezone) : toDateKey(max);
+  const days = dateDiffDays(startKey, endKey) + 1; // inclusive (本地)
   return { start: min.toISOString(), end: max.toISOString(), days };
 }
 
-function dateDiffDays(d1, d2) { // YYYY-MM-DD
-  const t1 = Date.parse(d1 + 'T00:00:00Z');
-  const t2 = Date.parse(d2 + 'T00:00:00Z');
-  return Math.floor((t2 - t1)/(86400000));
+function dateDiffDays(d1, d2) { // YYYY-MM-DD (本地)
+  const [y1,m1,da1] = d1.split('-').map(Number);
+  const [y2,m2,da2] = d2.split('-').map(Number);
+  const t1 = new Date(y1, m1-1, da1, 0,0,0,0).getTime();
+  const t2 = new Date(y2, m2-1, da2, 0,0,0,0).getTime();
+  return Math.round((t2 - t1)/86400000);
 }
 
-function buildMeta({ version, excludedCount, filterWindow, timeRange, classification }) {
+function buildMeta({ version, excludedCount, filterWindow, timeRange, classification, timezone }) {
   return {
     generatedAt: new Date().toISOString(),
     version,
@@ -1408,7 +1484,8 @@ function buildMeta({ version, excludedCount, filterWindow, timeRange, classifica
       inclusiveEnd: filterWindow.inclusiveEnd,
       excluded: excludedCount
     },
-    timeRange
+  timeRange,
+  timezone: timezone || null
   };
 }
 

@@ -63,6 +63,18 @@
                         </label>
                         <input type="datetime-local" id="endDate" />
                     </div>
+                    <!-- Timezone Selector -->
+                    <div class="setting-row">
+                        <label class="setting-label">Timezone
+                            <span class="help-icon" data-tip="Select the display / interpretation timezone for time range filtering & UI display. Defaults to your browser detected timezone. This selection will NOT change automatically after CSV upload.">?</span>
+                        </label>
+                        <div class="tz-select-wrapper" id="timezoneCustomWrapper">
+                            <button type="button" id="timezoneSelectButton" class="tz-select-btn" aria-haspopup="listbox" aria-expanded="false">Loading...</button>
+                            <div id="timezoneOptions" class="tz-options" role="listbox" aria-label="Timezone Options"></div>
+                            <!-- Keep original select for existing JS logic -->
+                            <select id="timezoneSelect" class="visually-hidden" tabindex="-1" aria-hidden="true"></select>
+                        </div>
+                    </div>
                     
 
                     <!-- Divider -->

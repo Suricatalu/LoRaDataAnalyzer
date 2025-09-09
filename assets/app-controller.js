@@ -1,8 +1,240 @@
 // Main Controller (v2) 使用新版 parseCSVRaw + buildAnalytics
 
 // 全域暫存：原始紀錄與分析結果
-let rawRecords = [];
+let rawRecords = []; 
 let currentAnalytics = null; // {perNode, global, threshold, meta}
+let currentTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone; // 使用者目前選擇（預設瀏覽器）
+let originalCsvText = null; // 保存原始 CSV 文字供時區切換重解析
+
+// 固定的 UTC 偏移 + 顯示名稱列表（需求指定）
+// label: 顯示, tz: IANA 時區
+const FIXED_TIMEZONES = [
+  { label: '(UTC−12:00) Baker Island', tz: 'Etc/GMT+12' },
+  { label: '(UTC−11:00) Pago Pago', tz: 'Pacific/Pago_Pago' },
+  { label: '(UTC−10:00) Honolulu', tz: 'Pacific/Honolulu' },
+  { label: '(UTC−09:00) Anchorage', tz: 'America/Anchorage' },
+  { label: '(UTC−08:00) Los Angeles', tz: 'America/Los_Angeles' },
+  { label: '(UTC−07:00) Denver', tz: 'America/Denver' },
+  { label: '(UTC−06:00) Mexico City', tz: 'America/Mexico_City' },
+  { label: '(UTC−05:00) New York', tz: 'America/New_York' },
+  { label: '(UTC−04:00) Santiago', tz: 'America/Santiago' },
+  { label: '(UTC−03:30) St. John’s', tz: 'America/St_Johns' },
+  { label: '(UTC−03:00) Buenos Aires', tz: 'America/Argentina/Buenos_Aires' },
+  { label: '(UTC−02:00) South Georgia', tz: 'Atlantic/South_Georgia' },
+  { label: '(UTC−01:00) Azores', tz: 'Atlantic/Azores' },
+  { label: '(UTC±00:00) London', tz: 'Europe/London' },
+  { label: '(UTC+01:00) Berlin', tz: 'Europe/Berlin' },
+  { label: '(UTC+02:00) Athens', tz: 'Europe/Athens' },
+  { label: '(UTC+03:00) Moscow', tz: 'Europe/Moscow' },
+  { label: '(UTC+03:30) Tehran', tz: 'Asia/Tehran' },
+  { label: '(UTC+04:00) Dubai', tz: 'Asia/Dubai' },
+  { label: '(UTC+04:30) Kabul', tz: 'Asia/Kabul' },
+  { label: '(UTC+05:00) Karachi', tz: 'Asia/Karachi' },
+  { label: '(UTC+05:30) New Delhi', tz: 'Asia/Kolkata' },
+  { label: '(UTC+05:45) Kathmandu', tz: 'Asia/Kathmandu' },
+  { label: '(UTC+06:00) Dhaka', tz: 'Asia/Dhaka' },
+  { label: '(UTC+06:30) Yangon', tz: 'Asia/Yangon' },
+  { label: '(UTC+07:00) Bangkok', tz: 'Asia/Bangkok' },
+  { label: '(UTC+08:00) Taipei', tz: 'Asia/Taipei' },
+  { label: '(UTC+08:00) Singapore', tz: 'Asia/Singapore' },
+  { label: '(UTC+09:00) Tokyo', tz: 'Asia/Tokyo' },
+  { label: '(UTC+09:30) Adelaide', tz: 'Australia/Adelaide' },
+  { label: '(UTC+10:00) Sydney', tz: 'Australia/Sydney' },
+  { label: '(UTC+11:00) Honiara', tz: 'Pacific/Honiara' },
+  { label: '(UTC+12:00) Auckland', tz: 'Pacific/Auckland' },
+  { label: '(UTC+12:45) Chatham Islands', tz: 'Pacific/Chatham' },
+  { label: '(UTC+13:00) Apia', tz: 'Pacific/Apia' },
+  { label: '(UTC+14:00) Kiritimati', tz: 'Pacific/Kiritimati' },
+];
+
+function populateTimezoneDropdown() {
+  const sel = document.getElementById('timezoneSelect');
+  const wrapper = document.getElementById('timezoneCustomWrapper');
+  const btn = document.getElementById('timezoneSelectButton');
+  const optBox = document.getElementById('timezoneOptions');
+  if (!sel) return;
+  sel.innerHTML = '';
+  if (optBox) optBox.innerHTML = '';
+  const browserTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  let matched = false;
+  FIXED_TIMEZONES.forEach(item => {
+    const opt = document.createElement('option');
+    opt.value = item.tz;
+    opt.textContent = item.label + (item.tz === browserTz ? ' (Browser)' : '');
+    if (!matched && item.tz === browserTz) {
+      opt.selected = true;
+      currentTimezone = item.tz;
+      matched = true;
+    }
+    sel.appendChild(opt);
+    if (optBox) {
+      const div = document.createElement('div');
+      div.className = 'tz-option';
+      div.setAttribute('role','option');
+      div.dataset.value = item.tz;
+      div.textContent = opt.textContent;
+      if (item.tz === currentTimezone) {
+        div.classList.add('active');
+        div.setAttribute('aria-selected','true');
+      }
+      div.addEventListener('click', () => { selectTimezoneValue(item.tz); closeTzMenu(); });
+      optBox.appendChild(div);
+    }
+  });
+  if (!matched) {
+    const london = FIXED_TIMEZONES.find(z => z.tz === 'Europe/London');
+    if (london) { currentTimezone = london.tz; sel.value = london.tz; }
+  }
+  if (btn) {
+    const selectedOpt = sel.options[sel.selectedIndex];
+    btn.textContent = selectedOpt ? selectedOpt.textContent : 'Select Timezone';
+  }
+  function openTzMenu() {
+    if (!optBox || !btn) return;
+    optBox.classList.add('open');
+    btn.setAttribute('aria-expanded','true');
+    const active = optBox.querySelector('.tz-option.active');
+    if (active) active.scrollIntoView({block:'nearest'});
+  }
+  function closeTzMenu() {
+    if (!optBox || !btn) return;
+    optBox.classList.remove('open');
+    btn.setAttribute('aria-expanded','false');
+  }
+  function toggleTzMenu() { if (optBox && optBox.classList.contains('open')) closeTzMenu(); else openTzMenu(); }
+  function selectTimezoneValue(val) {
+    currentTimezone = val;
+    sel.value = val;
+    if (optBox) {
+      optBox.querySelectorAll('.tz-option').forEach(el => {
+        const active = el.dataset.value === val;
+        el.classList.toggle('active', active);
+        if (active) el.setAttribute('aria-selected','true'); else el.removeAttribute('aria-selected');
+      });
+    }
+    const selectedOpt = sel.options[sel.selectedIndex];
+    if (btn) btn.textContent = selectedOpt ? selectedOpt.textContent : val;
+    if (originalCsvText) {
+      try {
+        rawRecords = parseCSVRaw(originalCsvText, { timezone: currentTimezone });
+        console.log('[App][Timezone] Re-parsed raw under new timezone:', currentTimezone, rawRecords.length);
+      } catch(e) { console.warn('[App][Timezone] Re-parse failed:', e); }
+    }
+    const startInput = document.getElementById('startDate');
+    const endInput = document.getElementById('endDate');
+    if (startInput && startInput.value) {
+      const parsed = parseDateTimeLocalWithTZ(startInput.value, currentTimezone);
+      if (parsed) startInput.value = dateToDateTimeLocalWithTZ(parsed, currentTimezone);
+    }
+    if (endInput && endInput.value) {
+      const parsed = parseDateTimeLocalWithTZ(endInput.value, currentTimezone);
+      if (parsed) endInput.value = dateToDateTimeLocalWithTZ(parsed, currentTimezone);
+    }
+    rebuildAnalytics();
+    refreshOverlayIfOpen();
+  }
+  window.selectTimezoneValue = selectTimezoneValue;
+  function focusNext(dir) {
+    if (!optBox) return;
+    const items = Array.from(optBox.querySelectorAll('.tz-option'));
+    let idx = items.findIndex(i=>i.classList.contains('active'));
+    if (idx === -1) idx = 0;
+    idx = (idx + dir + items.length) % items.length;
+    const target = items[idx];
+    if (target) {
+      items.forEach(i=>i.classList.remove('active'));
+      target.classList.add('active');
+      target.scrollIntoView({block:'nearest'});
+    }
+  }
+  if (btn) {
+    btn.addEventListener('click', toggleTzMenu);
+    btn.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleTzMenu(); }
+      else if (e.key === 'ArrowDown') { e.preventDefault(); openTzMenu(); focusNext(1); }
+      else if (e.key === 'ArrowUp') { e.preventDefault(); openTzMenu(); focusNext(-1); }
+      else if (e.key === 'Escape') { closeTzMenu(); }
+    });
+  }
+  document.addEventListener('click', (e) => {
+    if (!wrapper) return;
+    if (!wrapper.contains(e.target)) closeTzMenu();
+  });
+  if (optBox) {
+    optBox.addEventListener('keydown', (e) => {
+      if (e.key === 'ArrowDown') { e.preventDefault(); focusNext(1); }
+      else if (e.key === 'ArrowUp') { e.preventDefault(); focusNext(-1); }
+      else if (e.key === 'Enter') { e.preventDefault(); const act = optBox.querySelector('.tz-option.active'); if (act) { selectTimezoneValue(act.dataset.value); closeTzMenu(); } }
+      else if (e.key === 'Escape') { closeTzMenu(); btn && btn.focus(); }
+    });
+  }
+}
+
+function getSelectedTimezone() {
+  return currentTimezone;
+}
+
+// 將 Date 物件格式化為 datetime-local string 但以 currentTimezone 解讀（顯示仍以本地控件）
+function dateToDateTimeLocalWithTZ(date, tz) {
+  try {
+    // 以指定時區分解
+    const fmt = new Intl.DateTimeFormat('en-CA', { // en-CA 給 YYYY-MM-DD
+      timeZone: tz,
+      year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', hour12: false
+    });
+    const parts = Object.fromEntries(fmt.formatToParts(date).map(p => [p.type, p.value]));
+    return `${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}`;
+  } catch(e) {
+    // fallback 使用原本本地
+    const year = date.getFullYear();
+    const month = String(date.getMonth()+1).padStart(2,'0');
+    const day = String(date.getDate()).padStart(2,'0');
+    const hour = String(date.getHours()).padStart(2,'0');
+    const minute = String(date.getMinutes()).padStart(2,'0');
+    return `${year}-${month}-${day}T${hour}:${minute}`;
+  }
+}
+
+// 將 datetime-local 控制值依 currentTimezone 轉換成 UTC Date
+function parseDateTimeLocalWithTZ(value, tz) {
+  // value: YYYY-MM-DDTHH:mm
+  if (!value) return null;
+  const [datePart, timePart] = value.split('T');
+  if (!datePart || !timePart) return null;
+  const [year, month, day] = datePart.split('-').map(n=>parseInt(n,10));
+  const [hour, minute] = timePart.split(':').map(n=>parseInt(n,10));
+  // 使用指定時區建立對應 UTC：透過 Date.UTC + 偏移推算
+  // 簡易作法：使用該時區格式化一個暫存 Date 去反推 offset 不可靠；改用 Temporal 若可用
+  if (typeof Temporal !== 'undefined' && Temporal.ZonedDateTime) {
+    try {
+      const zoned = new Temporal.ZonedDateTime.from({ year, month, day, hour, minute, timeZone: tz, nanosecond:0 });
+      return new Date(zoned.epochMilliseconds);
+    } catch(e) {
+      // fallback 下方
+    }
+  }
+  // Fallback: 假設輸入值是此時區的 wall time，先當作 UTC 建 Date，再調整成該時區 offset
+  // 近似：建立一個在本地的 Date，再用該時區格式化後判斷偏移（簡化，不完全精準於 DST 切換瞬間）
+  const temp = new Date(Date.UTC(year, month-1, day, hour, minute));
+  try {
+    const fmt = new Intl.DateTimeFormat('en-US', { timeZone: tz, hour12:false, year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit'});
+    const parts = Object.fromEntries(fmt.formatToParts(temp).map(p=>[p.type,p.value]));
+    // 取得該時區此刻實際 local parts 對應的 UTC
+    const tzYear = parseInt(parts.year,10);
+    const tzMonth = parseInt(parts.month,10);
+    const tzDay = parseInt(parts.day,10);
+    const tzHour = parseInt(parts.hour,10);
+    const tzMinute = parseInt(parts.minute,10);
+    // 若 parts 與輸入不同，估算 offset 差
+    const desired = Date.UTC(year, month-1, day, hour, minute);
+    const got = Date.UTC(tzYear, tzMonth-1, tzDay, tzHour, tzMinute);
+    const diffMs = desired - got; // 期望與實際，反向補
+    return new Date(temp.getTime() + diffMs);
+  } catch(e) {
+    return temp; // 最後 fallback
+  }
+}
 
 /**
  * 初始化應用
@@ -162,15 +394,7 @@ function autoFillDateRange(records) {
   // 如果找到有效的時間範圍
   if (earliestTime && latestTime) {
     // 轉換為 datetime-local 格式 (YYYY-MM-DDTHH:mm)
-    const formatDateTimeLocal = (date) => {
-      // 取得本地時間
-      const year = date.getFullYear();
-      const month = String(date.getMonth() + 1).padStart(2, '0');
-      const day = String(date.getDate()).padStart(2, '0');
-      const hours = String(date.getHours()).padStart(2, '0');
-      const minutes = String(date.getMinutes()).padStart(2, '0');
-      return `${year}-${month}-${day}T${hours}:${minutes}`;
-    };
+  const formatDateTimeLocal = (date) => dateToDateTimeLocalWithTZ(date, currentTimezone);
     
     // 自動填入最早時間（如果欄位為空）
     if (startDateInput && !startDateInput.value) {
@@ -473,8 +697,8 @@ function collectFilterOptions() {
   const startVal = document.getElementById('startDate')?.value;
   const endVal = document.getElementById('endDate')?.value;
   const filterWindow = {};
-  if (startVal) filterWindow.start = new Date(startVal);
-  if (endVal) filterWindow.end = new Date(endVal);
+  if (startVal) filterWindow.start = parseDateTimeLocalWithTZ(startVal, currentTimezone);
+  if (endVal) filterWindow.end = parseDateTimeLocalWithTZ(endVal, currentTimezone);
   
   // gap -> 以分鐘為單位，僅分析階段需要紀錄 gap => gapThresholdMinutes; 這裡提供給 buildAnalytics
   const gapEnabled = document.getElementById('useNoDataDuration')?.checked;
@@ -524,7 +748,7 @@ function rebuildAnalytics() {
   console.log('[App] Building analytics with hierarchical classification:', { threshold, fcntFilter, gapThresholdMinutes });
   
   // 使用階層式分類邏輯，不需要額外篩選
-  const { analytics } = buildAnalytics(rawRecords, { classification, filterWindow, gapThresholdMinutes });
+  const { analytics } = buildAnalytics(rawRecords, { classification, filterWindow, gapThresholdMinutes, timezone: currentTimezone });
   
   // 注意：不再進行額外的節點篩選，因為分類邏輯已經處理了所有情況
   // 所有節點都會被保留，只是重新分類為 normal/abnormal/exception
@@ -604,21 +828,6 @@ function updateGapTabVisibility() {
     // 顯示按鈕與內容（內容僅在被選取時顯示，維持原本 hidden 狀態）
     gapTabBtn.style.display = '';
     gapTabContent.style.display = '';
-  }
-}
-
-/**
- * 確保 nodeData tab-content 永遠位於 overlay-content 內的最後位置
- * 若未在最後則重新 append（不影響事件與狀態）
- */
-function ensureNodeDataTabLast() {
-  const overlayContent = document.querySelector('#nodeOverlay .overlay-content');
-  const nodeData = document.getElementById('nodeData');
-  if (!overlayContent || !nodeData) return;
-  // 只在不是最後一個子元素時調整
-  if (overlayContent.lastElementChild !== nodeData) {
-    overlayContent.appendChild(nodeData);
-    console.log('[App] Repositioned #nodeData to last inside overlay-content');
   }
 }
 
@@ -838,10 +1047,10 @@ function refreshOverlayIfOpen() {
     if (timeRange.start || timeRange.end) {
       const parts = [];
       if (timeRange.start) {
-        parts.push(`開始時間: ${timeRange.start.toLocaleString('zh-TW')}`);
+  parts.push(`開始時間: ${timeRange.start.toLocaleString('zh-TW', { timeZone: currentTimezone })} (${currentTimezone})`);
       }
       if (timeRange.end) {
-        parts.push(`結束時間: ${timeRange.end.toLocaleString('zh-TW')}`);
+  parts.push(`結束時間: ${timeRange.end.toLocaleString('zh-TW', { timeZone: currentTimezone })} (${currentTimezone})`);
       }
       timeRangeElement.textContent = `時間篩選範圍 - ${parts.join(' | ')}`;
     } else {
@@ -893,9 +1102,10 @@ async function handleFileChange(e) {
     // 顯示檔案資訊
     showFileInfo(file);
     
-    const text = await file.text();
-    rawRecords = parseCSVRaw(text);
-    console.log('[App] Parsed records:', rawRecords.length);
+  const text = await file.text();
+  originalCsvText = text;
+  rawRecords = parseCSVRaw(text, { timezone: currentTimezone });
+  console.log('[App] Parsed records:', rawRecords.length, 'timezone:', currentTimezone);
     
     // 如果有資料且 checkbox 未被勾選，自動填入時間範圍
     autoFillDateRange(rawRecords);
@@ -955,7 +1165,8 @@ function handleShowAllNodes() {
     classification, 
     filterWindow, 
     // 保持 gap 分析設定以便產生每日與總覽的 GAP 相關徽章
-    gapThresholdMinutes
+    gapThresholdMinutes,
+    timezone: currentTimezone
   });
   
   // 更新當前分析結果並刷新顯示
@@ -1043,7 +1254,12 @@ document.addEventListener('DOMContentLoaded', () => {
   initializeTableRelated();
   // 初始根據 checkbox 狀態決定是否顯示 Gaps 分頁
   updateGapTabVisibility();
-  ensureNodeDataTabLast();
+  // 初始化時區下拉
+  populateTimezoneDropdown();
+  const tzSelect = document.getElementById('timezoneSelect');
+  if (tzSelect) {
+  // 原生 select 僅作為資料容器，行為已由自訂組件控制
+  }
 });
 
 // 暴露全域（與舊版名稱不同避免衝突）
@@ -1054,4 +1270,5 @@ window.rebuildAnalytics = rebuildAnalytics;
 window.getCurrentAnalytics = () => currentAnalytics;
 window.getRawRecords = () => rawRecords;
 window.updateGapTabVisibility = updateGapTabVisibility;
-window.ensureNodeDataTabLast = ensureNodeDataTabLast;
+window.getSelectedTimezone = getSelectedTimezone;
+window.getOriginalCsvText = () => originalCsvText;

@@ -568,6 +568,120 @@ section:hover {
     height: 32px;
     box-sizing: border-box;
 }
+/* Time zone select & generic select styling */
+.setting-row select,
+#timezoneSelect {
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    color: var(--text-secondary);
+    padding: 6px 34px 6px 10px; /* 預留右側空間給箭頭 */
+    border-radius: 4px;
+    font-size: 13px;
+    width: 100%;
+    max-width: 260px;
+    height: 34px;
+    box-sizing: border-box;
+    appearance: none;
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    line-height: 1.3;
+    cursor: pointer;
+    position: relative;
+    background-image: url("data:image/svg+xml;charset=UTF-8,%3Csvg width='14' height='14' viewBox='0 0 24 24' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M6.75 9L12 15L17.25 9' stroke='%2388a2c4' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 10px center;
+    background-size: 16px 16px;
+    transition: border-color .18s ease, background-color .18s ease, box-shadow .18s ease;
+}
+.setting-row select:focus,
+#timezoneSelect:focus {
+    outline: none;
+    border-color: var(--accent-primary);
+    box-shadow: 0 0 4px rgba(13,110,253,0.4);
+}
+.setting-row select:hover,
+#timezoneSelect:hover {
+    border-color: var(--border-light);
+    background-color: var(--bg-hover);
+}
+.setting-row select:disabled,
+#timezoneSelect:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+}
+/* 時區下拉展開樣式限制：使用 datalist 類似感或原生 select 展開時 (瀏覽器控制)，此處只能調整 option 與滾動條 */
+#timezoneSelect {
+  max-width: 260px;
+}
+/* Safari/Chrome 無法直接控制下拉面板高度；此為備註：若需完全自訂可改用自製彈層組件 (未實作) */
+
+/* 下拉選單捲軸 (WebKit) */
+select::-webkit-scrollbar {
+    width: 10px;
+}
+select::-webkit-scrollbar-track {
+    background: var(--bg-secondary);
+}
+select::-webkit-scrollbar-thumb {
+    background: var(--bg-tertiary);
+    border-radius: 6px;
+    border: 2px solid var(--bg-secondary);
+}
+select::-webkit-scrollbar-thumb:hover {
+    background: var(--accent-primary);
+}
+/* 專為時區選單的長文字優化 */
+#timezoneSelect option {
+    background: var(--bg-secondary);
+    color: var(--text-secondary);
+    font-size: 13px;
+    padding: 4px 6px;
+    line-height: 1.3;
+    white-space: nowrap;
+}
+#timezoneSelect option:checked,
+#timezoneSelect option:hover {
+    background: var(--accent-primary);
+    color: var(--text-primary);
+}
+/* 限制時區選單可見高度 (size=5) 並確保滾動美觀 */
+#timezoneSelect {
+    overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: var(--bg-tertiary) var(--bg-secondary);
+}
+#timezoneSelect::-webkit-scrollbar { width: 10px; }
+#timezoneSelect::-webkit-scrollbar-track { background: var(--bg-secondary); }
+#timezoneSelect::-webkit-scrollbar-thumb { background: var(--bg-tertiary); border-radius: 6px; border: 2px solid var(--bg-secondary); }
+#timezoneSelect::-webkit-scrollbar-thumb:hover { background: var(--accent-primary); }
+/* 限制展開時最多可見 ~6 筆 (以 option 高度估算) */
+#timezoneSelect[size] {
+    /* option 高度約 26-28px，6 * 28 + padding/邊框 ≈ 180px */
+    max-height: 180px;
+    overflow-y: auto;
+}
+
+/* Custom Timezone Dropdown */
+.tz-select-wrapper { position: relative; width: 100%; max-width: 260px; }
+.tz-select-btn {
+    width: 100%; text-align: left; background: var(--bg-tertiary); color: var(--text-secondary);
+    border: 1px solid var(--border-color); border-radius: 4px; padding: 6px 34px 6px 10px; font-size:13px; cursor:pointer;
+    background-image: url("data:image/svg+xml;charset=UTF-8,%3Csvg width='14' height='14' viewBox='0 0 24 24' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M6.75 9L12 15L17.25 9' stroke='%2388a2c4' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+    background-repeat: no-repeat; background-position: right 10px center; background-size:16px 16px;
+    transition: border-color .18s ease, background-color .18s ease, box-shadow .18s ease;
+}
+.tz-select-btn:focus, .tz-select-btn[aria-expanded="true"] { outline:none; border-color: var(--accent-primary); box-shadow:0 0 4px rgba(13,110,253,0.4); }
+.tz-select-btn:hover { border-color: var(--border-light); background: var(--bg-hover); }
+.tz-options { position:absolute; top: calc(100% + 4px); left:0; width:100%; background: var(--bg-secondary); border:1px solid var(--border-color); border-radius:6px; box-shadow:0 6px 18px rgba(0,0,0,0.35); padding:4px 0; z-index:200; display:none; max-height:180px; overflow-y:auto; scrollbar-width: thin; scrollbar-color: var(--bg-tertiary) var(--bg-secondary); }
+.tz-options.open { display:block; animation: fadeSlide .12s ease; }
+@keyframes fadeSlide { from { opacity:0; transform:translateY(-4px);} to { opacity:1; transform:translateY(0);} }
+.tz-option { padding:6px 10px; font-size:13px; color: var(--text-secondary); cursor:pointer; line-height:1.3; white-space:nowrap; }
+.tz-option:hover, .tz-option[aria-selected="true"], .tz-option.active { background: var(--accent-primary); color: var(--text-primary); }
+.tz-options::-webkit-scrollbar { width:10px; }
+.tz-options::-webkit-scrollbar-track { background: var(--bg-secondary); }
+.tz-options::-webkit-scrollbar-thumb { background: var(--bg-tertiary); border-radius:6px; border:2px solid var(--bg-secondary); }
+.tz-options::-webkit-scrollbar-thumb:hover { background: var(--accent-primary); }
+.visually-hidden { position:absolute !important; left:-9999px !important; width:1px; height:1px; overflow:hidden; }
 .setting-row input[type="datetime-local"]::-webkit-calendar-picker-indicator {
     filter: invert(0.85) brightness(1.2);
     opacity: 0.85;
@@ -1102,6 +1216,30 @@ table.dataTable.nowrap td {
     color: var(--accent-secondary);
     text-decoration: underline;
 }
+
+/* 自訂時區下拉選單 */
+.tz-select { position: relative; width: 100%; max-width: 260px; }
+.tz-selected { width:100%; background: var(--bg-tertiary); border:1px solid var(--border-color); color:var(--text-secondary); padding:6px 34px 6px 10px; border-radius:4px; font-size:13px; text-align:left; cursor:pointer; position:relative; line-height:1.3; }
+.tz-selected:after { content:''; position:absolute; right:10px; top:50%; width: 0; height: 0; border-left:6px solid transparent; border-right:6px solid transparent; border-top:7px solid #88a2c4; transform:translateY(-30%); transition: transform .2s ease; }
+.tz-selected[aria-expanded='true']:after { transform: translateY(-70%) rotate(180deg); }
+.tz-selected:hover { border-color: var(--border-light); background: var(--bg-hover); }
+.tz-selected:focus { outline:none; border-color: var(--accent-primary); box-shadow:0 0 4px rgba(13,110,253,0.4); }
+.tz-dropdown { position:absolute; left:0; top: calc(100% + 4px); width:100%; background: var(--bg-secondary); border:1px solid var(--border-color); border-radius:6px; box-shadow:0 8px 18px rgba(0,0,0,0.4); max-height:185px; overflow-y:auto; padding:4px 0; z-index:150; scrollbar-width: thin; scrollbar-color: var(--bg-tertiary) var(--bg-secondary); }
+.tz-dropdown::-webkit-scrollbar { width:10px; }
+.tz-dropdown::-webkit-scrollbar-track { background: var(--bg-secondary); }
+.tz-dropdown::-webkit-scrollbar-thumb { background: var(--bg-tertiary); border-radius:6px; border:2px solid var(--bg-secondary); }
+.tz-dropdown::-webkit-scrollbar-thumb:hover { background: var(--accent-primary); }
+.tz-option { padding:6px 10px; font-size:13px; line-height:1.2; cursor:pointer; display:flex; align-items:center; gap:6px; color: var(--text-secondary); }
+.tz-option:hover, .tz-option[data-active='true'] { background: var(--accent-primary); color: var(--text-primary); }
+.tz-option .tz-offset { font-weight:600; min-width:72px; color: var(--info-color); }
+.tz-option.active .tz-offset, .tz-option:hover .tz-offset { color: #fff; }
+.tz-option .tz-name { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.tz-dropdown.hidden { display:none; }
+.tz-no-match { padding:8px 10px; font-size:12px; color: var(--text-disabled); }
+/* 可選搜尋列（預留） */
+.tz-search { padding:4px 8px 8px 8px; }
+.tz-search input { width:100%; background: var(--bg-tertiary); border:1px solid var(--border-color); color:var(--text-secondary); padding:6px 8px; font-size:13px; border-radius:4px; }
+.tz-search input:focus { outline:none; border-color: var(--accent-primary); box-shadow: 0 0 4px rgba(13,110,253,0.4); }
 
 /* Responsive Adjustments */
 @media (max-width: 768px) {

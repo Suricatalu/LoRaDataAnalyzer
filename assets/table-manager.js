@@ -1040,7 +1040,6 @@ function populateNodeDataTable(devname, devaddr) {
     // MAC can be array or joined string
     let mac = getField(r, 'Mac', 'MAC', 'DevEUI') || '';
     if (Array.isArray(mac)) {
-      console.log('[Table] MAC is array, joining with newlines:', mac);
       mac = mac.join('\n');
     }
 
