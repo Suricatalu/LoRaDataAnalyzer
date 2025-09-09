@@ -2,10 +2,376 @@
 
 let barChart; // Chart.js 實例
 let nodeUpFreqChart; // 新增：節點上行頻率圖表實例
-let nodeGwPolarChart; // 新增：節點接收器極座標圖表實例
+let nodeGwBarChart; // Gateway 分布圖表實例（bar）
+let nodeGapTimelineChart; // GAP 時間軸圖
+let nodeDailyGapBarChart; // 每日最大 GAP 圖
+let gapOverlayEnabled = true; // RSSI/SNR 圖表疊層開關
+let gapOverlayMeta = { segments: [] }; // 儲存目前節點 GAP 區段 (timestamp pair)
+
+// 統一 GAP 分鐘顯示格式：整數不帶小數，否則顯示到小數第 2 位
+function formatGapMinutes(val) {
+  if (val == null || isNaN(val)) return '-';
+  const rounded = Math.round((val + Number.EPSILON) * 100) / 100; // 2 位四捨五入
+  if (Math.abs(rounded - Math.round(rounded)) < 1e-9) return String(Math.round(rounded));
+  return rounded.toFixed(2);
+}
+
+// 將分鐘轉成人類可讀 (支援天/小時/分鐘/秒)；僅在 >=60 分時加入分段
+function formatGapHuman(minutes) {
+  if (minutes == null || isNaN(minutes)) return '-';
+  const totalMs = minutes * 60000;
+  const totalSec = Math.floor(totalMs / 1000);
+  const d = Math.floor(totalSec / 86400);
+  const h = Math.floor((totalSec % 86400) / 3600);
+  const m = Math.floor((totalSec % 3600) / 60);
+  const s = totalSec % 60;
+  const parts = [];
+  if (d) parts.push(d + 'd');
+  if (h) parts.push(h + 'h');
+  if (m) parts.push(m + 'm');
+  if (!d && !h && !m && s) parts.push(s + 's'); // 小於 1 分顯示秒
+  return parts.length ? parts.join(' ') : '0m';
+}
+
+// 確保註冊『應接收總數』水平虛線插件（使虛線覆蓋整個 x 軸寬度並加上文字）
+function ensureExpectedLinePluginRegistered() {
+  if (typeof Chart === 'undefined') return; // Chart.js 尚未載入
+  // 如果已經註冊過就跳過
+  if (Chart.registry && Chart.registry.plugins.get('expectedTotalLine')) return;
+  Chart.register({
+    id: 'expectedTotalLine',
+    afterDatasetsDraw(chart) {
+      // 僅處理包含 isExpectedLine dataset 的圖 (我們用隱藏 dataset 作為旗標)
+      const ds = chart.data && chart.data.datasets && chart.data.datasets.find(d => d.isExpectedLine);
+      if (!ds) return;
+      const expectedValue = chart.$expectedTotal || (Array.isArray(ds.data) ? ds.data[0] : null);
+      if (!(expectedValue > 0)) return;
+      const yScale = chart.scales && (chart.scales['y'] || Object.values(chart.scales).find(s => s.axis === 'y'));
+      if (!yScale) return;
+      const y = yScale.getPixelForValue(expectedValue);
+      const area = chart.chartArea;
+      if (!area) return;
+      const { left, right, top, bottom } = area;
+      if (y < top - 5 || y > bottom + 5) return; // 超出範圍不畫
+      const ctx = chart.ctx;
+      ctx.save();
+      // 畫虛線（全寬）
+      ctx.setLineDash([6,6]);
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = 'rgba(255,255,255,0.6)';
+      ctx.beginPath();
+      ctx.moveTo(left, y);
+      ctx.lineTo(right, y);
+      ctx.stroke();
+
+      // 標註文字
+      const label = `應接收總數 ${expectedValue}`;
+      ctx.font = '12px sans-serif';
+      ctx.textBaseline = 'middle';
+      const textWidth = ctx.measureText(label).width;
+  const chartWidth = right - left;
+  let textX = left + (chartWidth - textWidth) / 2; // 水平置中
+  textX = Math.max(left + 4, Math.min(textX, right - textWidth - 4)); // 邊界保護
+  let textY = y - 10; // 預設線上方
+      // 若接近頂部則放到線下方
+      if (textY < (top + 12)) textY = y + 12;
+      // 背景框
+      const paddingX = 4, paddingY = 3;
+      ctx.fillStyle = 'rgba(0,0,0,0.55)';
+      ctx.fillRect(textX - paddingX, textY - (10/2) - paddingY, textWidth + paddingX*2, 10 + paddingY*2);
+      // 文字
+      ctx.fillStyle = 'rgba(255,255,255,0.95)';
+      ctx.fillText(label, textX, textY);
+      ctx.restore();
+    }
+  });
+}
 
 function initializeChart() {
   console.log('[Chart] Manager ready');
+}
+
+// ---- GAP 視覺化相關 ----
+// 1) 時序 RSSI/SNR 圖 Overlay Plugin：畫出 gap 區段半透明背景
+function ensureGapOverlayPluginRegistered() {
+  if (typeof Chart === 'undefined') return;
+  if (Chart.registry && Chart.registry.plugins.get('gapOverlay')) return;
+  Chart.register({
+    id: 'gapOverlay',
+    beforeDatasetsDraw(chart, args, opts) {
+      if (!gapOverlayEnabled) return;
+      const metaSegs = chart.$gapSegments || [];
+      if (!metaSegs.length) return;
+      const xScale = chart.scales.x;
+      const yScale = chart.scales.y; // 取任一 y 畫滿高度
+      if (!xScale || !yScale) return;
+      const ctx = chart.ctx;
+      const area = chart.chartArea;
+      if (!area) return;
+      ctx.save();
+      metaSegs.forEach(seg => {
+        const [a, b] = seg; // number timestamp
+        if (a == null || b == null) return;
+        const left = xScale.getPixelForValue(a);
+        const right = xScale.getPixelForValue(b);
+        if (right < area.left || left > area.right) return; // 不在範圍
+        const clampedLeft = Math.max(left, area.left);
+        const clampedRight = Math.min(right, area.right);
+        if (clampedRight - clampedLeft < 2) return;
+        // 填滿區域
+  ctx.fillStyle = 'rgba(80,170,255,0.18)'; // 淺藍色半透明 (GAP 區段)
+  ctx.fillRect(clampedLeft, area.top, clampedRight - clampedLeft, area.bottom - area.top);
+  // 邊界線
+  ctx.strokeStyle = 'rgba(80,170,255,0.65)';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(clampedLeft, area.top);
+        ctx.lineTo(clampedLeft, area.bottom);
+        ctx.moveTo(clampedRight, area.top);
+        ctx.lineTo(clampedRight, area.bottom);
+        ctx.stroke();
+      });
+      ctx.restore();
+    }
+  });
+}
+
+// 2) GAP Timeline Chart：水平條帶顯示各 gap 區段
+function renderGapTimelineChart(node) {
+  const container = document.getElementById('nodeGapTimelineChart');
+  if (!container) return;
+  if (!node || !node.total || !Array.isArray(node.total.lossGapTime) || !node.total.lossGapTime.length) {
+    // Empty state
+    container.getContext && container.getContext('2d');
+    if (nodeGapTimelineChart) { nodeGapTimelineChart.destroy(); nodeGapTimelineChart = null; }
+    // 顯示簡單訊息（保持 canvas 不被移除避免切換 tab 尺寸問題）
+    const parent = container.parentElement;
+    if (parent && !parent.querySelector('.gap-timeline-empty')) {
+      const div = document.createElement('div');
+      div.className = 'gap-timeline-empty';
+      div.style.cssText = 'position:absolute;left:0;right:0;top:0;bottom:0;display:flex;align-items:center;justify-content:center;color:#aaa;font-style:italic;';
+      div.textContent = '無超出閾值的 GAP';
+      parent.style.position = 'relative';
+      parent.appendChild(div);
+    }
+    return;
+  } else {
+    // 移除 empty state
+    const parent = container.parentElement;
+    const emptyDiv = parent && parent.querySelector('.gap-timeline-empty');
+    if (emptyDiv) emptyDiv.remove();
+  }
+
+  const gaps = node.total.lossGapTime.map(([s, e]) => ({ start: new Date(s).getTime(), end: new Date(e).getTime() })).filter(g => !isNaN(g.start) && !isNaN(g.end));
+  if (!gaps.length) {
+    if (nodeGapTimelineChart) { nodeGapTimelineChart.destroy(); nodeGapTimelineChart = null; }
+    return;
+  }
+  // 取得使用者設定的時間範圍 (若有) 以限制 X 軸顯示範圍
+  let rangeStart = null, rangeEnd = null;
+  try {
+    if (window.getTimeRangeFilter) {
+      const tf = window.getTimeRangeFilter();
+      if (tf && tf.start instanceof Date && !isNaN(tf.start.getTime())) rangeStart = tf.start.getTime();
+      if (tf && tf.end instanceof Date && !isNaN(tf.end.getTime())) rangeEnd = tf.end.getTime();
+    }
+  } catch(e) { console.warn('[GapTimeline] getTimeRangeFilter failed', e); }
+  // 若未指定則由 gaps 計算
+  if (rangeStart == null) rangeStart = Math.min(...gaps.map(g => g.start));
+  if (rangeEnd == null) rangeEnd = Math.max(...gaps.map(g => g.end));
+  // 保護：若 start==end 則擴 1 分鐘
+  if (rangeEnd - rangeStart < 60000) rangeEnd = rangeStart + 60000;
+  if (nodeGapTimelineChart) nodeGapTimelineChart.destroy();
+  const ctx = container.getContext('2d');
+  nodeGapTimelineChart = new Chart(ctx, {
+    type: 'scatter',
+    data: { 
+      datasets: [{ 
+        label: 'GapSpan', 
+        data: gaps.map((g,i) => ({ x: (g.start+g.end)/2, y: 0, _gap:g, _idx:i })), 
+        pointRadius:0, 
+        pointHitRadius:12, 
+        pointHoverRadius:4, 
+        showLine:false 
+      }]
+    },
+    options: {
+      responsive:true, 
+      maintainAspectRatio:false,
+      scales:{
+        x:{ 
+          type:'linear', 
+          min: rangeStart, 
+          max: rangeEnd, 
+          ticks:{ 
+            color:'#fff', 
+            callback:(v)=> { 
+              const d=new Date(v); 
+              return d.toLocaleString('zh-TW',{month:'2-digit',day:'2-digit',hour:'2-digit'}); 
+            } 
+          }, 
+          grid:{ color:'rgba(255,255,255,0.15)'} 
+        },
+        y:{ display:false }
+      },
+      plugins:{ 
+        legend:{display:false}, 
+        title:{ 
+          display:true, 
+          text:'GAP 時間軸 (No Data Gap Timeline)', 
+          color:'#fff', 
+          font:{ size:14 }
+        },
+        tooltip:{ 
+          callbacks:{ 
+            title:items=> { 
+              const r=items && items[0] && items[0].raw; 
+              return r && r._idx!=null ? `Gap #${r._idx+1}` : 'Gap'; 
+            }, 
+            label:c=> { 
+              const g=c.raw._gap; 
+              const minutes=(g.end-g.start)/60000; 
+              const dur=formatGapMinutes(minutes); 
+              const human = minutes>=60 ? ` (${formatGapHuman(minutes)})` : ''; 
+              return [
+                `開始: ${new Date(g.start).toLocaleString()}` ,
+                `結束: ${new Date(g.end).toLocaleString()}`,
+                `時長: ${dur} 分${human}`
+              ]; 
+            } 
+          } 
+        } 
+      }
+    },
+    plugins:[{
+      id:'gapSpanDrawer',
+      afterDatasetsDraw(chart){
+        const {ctx} = chart; const xScale=chart.scales.x; if(!xScale) return; const area=chart.chartArea;
+        const height = area.bottom - area.top - 12; const yTop = area.top + 6;
+        chart.data.datasets[0].data.forEach(pt=>{ 
+          const g=pt._gap; 
+          if(!g) return; 
+          const left=xScale.getPixelForValue(g.start); 
+          const right=xScale.getPixelForValue(g.end); 
+          if(right<area.left||left>area.right) return; 
+          const L=Math.max(left,area.left); 
+          const R=Math.min(right,area.right); 
+          ctx.save(); 
+          ctx.fillStyle='rgba(80,170,255,0.35)'; 
+          ctx.strokeStyle='rgba(80,170,255,0.9)'; 
+          ctx.fillRect(L,yTop,R-L,height); 
+          ctx.strokeRect(L,yTop,R-L,height); 
+          if(R-L>52){ 
+            const minutes=(g.end-g.start)/60000; 
+            const dur=formatGapMinutes(minutes)+'m'; 
+            ctx.font='12px sans-serif'; 
+            // 改為白色字體以提升在藍色背景上的可讀性
+            ctx.fillStyle='#ffffff'; 
+            const tw=ctx.measureText(dur).width; 
+            if(tw < R-L-8) ctx.fillText(dur, L+(R-L-tw)/2, yTop+height/2+4);
+          } 
+          ctx.restore(); 
+        });
+      }
+    }]
+  });
+  // 將此圖表容器高度調整為原本 (380px) 的三分之一 (~126px)
+  try {
+    const wrapper = container.closest('.node-chart-wrapper');
+    if (wrapper) {
+      const targetH = Math.max(100, Math.round(380/3));
+      wrapper.style.height = targetH + 'px';
+      wrapper.style.minHeight = targetH + 'px';
+    }
+  } catch(e) { /* ignore */ }
+}
+
+// 3) 每日最大 GAP 柱狀 (x=日期)
+function renderDailyGapBarChart(node) {
+  const canvas = document.getElementById('nodeDailyGapBarChart');
+  if (!canvas) return;
+  if (!node || !Array.isArray(node.daily) || !node.daily.length || !node.total || !node.total.gapThresholdMinutes) {
+    if (nodeDailyGapBarChart) { nodeDailyGapBarChart.destroy(); nodeDailyGapBarChart = null; }
+    return;
+  }
+  const labels = []; const values = [];
+  node.daily.forEach(day => {
+    if (typeof day.maxGapMinutes === 'number' && day.maxGapMinutes >= 0) {
+      labels.push(day.date);
+      values.push(day.maxGapMinutes);
+    }
+  });
+  if (!labels.length) { if (nodeDailyGapBarChart) { nodeDailyGapBarChart.destroy(); nodeDailyGapBarChart=null; } return; }
+  if (nodeDailyGapBarChart) nodeDailyGapBarChart.destroy();
+  const ctx = canvas.getContext('2d');
+  nodeDailyGapBarChart = new Chart(ctx, {
+    type: 'bar',
+  data: { labels, datasets: [{ label: '每日最大 GAP (分鐘)', data: values, backgroundColor: 'rgba(80,170,255,0.45)', borderColor:'rgba(80,170,255,0.9)', borderWidth:1, borderRadius:4 }]},
+    options: {
+      responsive:true,
+      maintainAspectRatio:false,
+      plugins:{ legend:{ display:false }, tooltip:{ callbacks:{ label: c => `最大 GAP: ${formatGapMinutes(c.parsed.y)} 分` } }, title:{ display:true, text:'Daily Max No Data Gap', color:'#fff' }},
+      scales:{
+        x:{ ticks:{ color:'#fff' }, grid:{ color:'rgba(255,255,255,0.1)' }},
+        y:{ beginAtZero:true, ticks:{ color:'#fff', callback:v=> formatGapMinutes(v) }, grid:{ color:'rgba(255,255,255,0.1)' }, title:{ display:true, text:'分鐘', color:'#fff' }}
+      }
+    }
+  });
+}
+
+// 4) GAP Summary Badge
+function renderGapSummary(node) {
+  const div = document.getElementById('gapSummary');
+  if (!div) return;
+  if (!node || !node.total || !node.total.gapThresholdMinutes) {
+    div.innerHTML = '<div class="gap-summary">未啟用 GAP 閾值或無資料</div>';
+    return;
+  }
+  const gapCnt = Array.isArray(node.total.lossGapTime) ? node.total.lossGapTime.length : 0;
+  const maxGap = typeof node.total.maxGapMinutes === 'number' ? node.total.maxGapMinutes : -1;
+  const thr = node.total.gapThresholdMinutes;
+  const parts = [];
+  parts.push(`<div class="gap-badge">Threshold: ${thr}m</div>`);
+  parts.push(`<div class="gap-badge">Gaps: ${gapCnt}</div>`);
+  parts.push(`<div class="gap-badge">Max Gap: ${maxGap > -1 ? formatGapMinutes(maxGap)+'m' : '-'}</div>`);
+  if (node.daily) {
+    const fullDays = node.daily.filter(d => d.noData).length;
+    if (fullDays) parts.push(`<div class="gap-badge" style="background:#a61e4d;">Full No-Data Days: ${fullDays}</div>`);
+  }
+  div.innerHTML = `<div class="gap-summary">${parts.join('')}</div>`;
+}
+
+// 5) 主函式：渲染 Gaps tab 內容
+function renderNodeGapCharts(node) {
+  renderGapSummary(node);
+  renderGapTimelineChart(node);
+  renderDailyGapBarChart(node);
+}
+
+// 6) 套用 Overlay 到既有 RSSI/SNR 圖 (table-manager.js 會已建立 nodeTimeSeriesChart)
+function applyGapOverlayToTimeSeriesChart(node) {
+  ensureGapOverlayPluginRegistered();
+  if (!window.nodeTimeSeriesChart && window.getNodeTimeSeriesChart) {
+    // 提供取 chart 的方法（未實作則略過）
+    try { window.nodeTimeSeriesChart = window.getNodeTimeSeriesChart(); } catch(e) {}
+  }
+  const chart = window.nodeTimeSeriesChart;
+  if (!chart) return;
+  let segments = [];
+  if (node && node.total && Array.isArray(node.total.lossGapTime)) {
+    segments = node.total.lossGapTime.map(([s,e]) => [new Date(s).getTime(), new Date(e).getTime()])
+      .filter(p => !isNaN(p[0]) && !isNaN(p[1]));
+  }
+  chart.$gapSegments = segments;
+  gapOverlayMeta.segments = segments;
+  chart.update();
+}
+
+// 7) 提供外部開關功能
+function setGapOverlayEnabled(flag) {
+  gapOverlayEnabled = !!flag;
+  const chart = window.nodeTimeSeriesChart;
+  if (chart) chart.update();
 }
 
 /**
@@ -504,8 +870,8 @@ function resizeChart() {
  * @param {string} devname - Device name
  * @param {string} devaddr - Device address
  */
-function createNodeGwPolarChart(devname, devaddr) {
-  console.log('[Chart] Creating gateway polar chart for', devname, devaddr);
+function createNodeGwBarChart(devname, devaddr) {
+  console.log('[Chart] Creating gateway gateway bar chart for', devname, devaddr);
   
   // 優先使用 analytics 數據結構
   if (window.getCurrentAnalytics) {
@@ -540,12 +906,12 @@ function createNodeGwPolarChart(devname, devaddr) {
         console.log('[Chart] Gateway count map from analytics:', gatewayCount);
         
         if (gatewayCount.size === 0) {
-          showGwPolarChartEmptyState();
+          showGwBarChartEmptyState();
           return;
         }
         
         // 使用 analytics 數據創建圖表
-        createPolarChartFromGatewayData(devname, devaddr, gatewayCount, nodeStats.total.totalWithDuplicates);
+  createGatewayBarChartFromData(devname, devaddr, gatewayCount, nodeStats.total.totalWithDuplicates);
         return;
       }
     }
@@ -591,7 +957,7 @@ function createNodeGwPolarChart(devname, devaddr) {
   console.log(`[Chart] Found ${filteredRecords.length} records for ${devname}`);
   
   if (filteredRecords.length === 0) {
-    showGwPolarChartEmptyState();
+  showGwBarChartEmptyState();
     return;
   }
   
@@ -638,13 +1004,13 @@ function createNodeGwPolarChart(devname, devaddr) {
   console.log('[Chart] Gateway count map from raw records:', gatewayCount);
   
   if (gatewayCount.size === 0) {
-    showGwPolarChartEmptyState();
+  showGwBarChartEmptyState();
     return;
   }
   
   // 使用原始數據創建圖表（計算總數）
   const totalWithDuplicates = filteredRecords.length;
-  createPolarChartFromGatewayData(devname, devaddr, gatewayCount, totalWithDuplicates);
+  createGatewayBarChartFromData(devname, devaddr, gatewayCount, totalWithDuplicates);
 }
 
 /**
@@ -654,59 +1020,64 @@ function createNodeGwPolarChart(devname, devaddr) {
  * @param {Map} gatewayCount - Map<gateway, count>
  * @param {number} totalWithDuplicates - Total packet count for percentage calculation
  */
-function createPolarChartFromGatewayData(devname, devaddr, gatewayCount, totalWithDuplicates) {
-  // 準備圖表資料
-  const labels = [];
-  const data = [];
-  const backgroundColors = [];
-  
-  // 轉換為陣列並排序
+function createGatewayBarChartFromData(devname, devaddr, gatewayCount, totalWithDuplicates) {
+  ensureExpectedLinePluginRegistered();
+  // 轉為陣列並排序（由大到小）
   const gatewayEntries = Array.from(gatewayCount.entries()).sort((a, b) => b[1] - a[1]);
-  
-  gatewayEntries.forEach(([gateway, count], index) => {
-    // 改善 Gateway 名稱顯示方式
-    let shortName;
-    if (gateway.length <= 12) {
-      shortName = gateway; // 短名稱直接顯示
-    } else {
-      // 對於長名稱，顯示前6個字元 + ... + 最後6個字元
-      shortName = gateway;
-    }
-    labels.push(shortName);
-    data.push(count);
-    
-    // 依值動態著色
-    const hue = (index * 137.5) % 360; // 使用黃金角度分佈顏色
-    const saturation = Math.min(85, 50 + (count / Math.max(...gatewayEntries.map(e => e[1]))) * 35);
-    const lightness = Math.min(70, 45 + (count / Math.max(...gatewayEntries.map(e => e[1]))) * 25);
-    backgroundColors.push(`hsla(${hue}, ${saturation}%, ${lightness}%, 0.8)`);
+  const labels = gatewayEntries.map(([gateway]) => {
+    if (gateway.length <= 24) return gateway; // 直接顯示
+    return gateway.slice(0, 12) + '...' + gateway.slice(-8); // 縮短
   });
-  
+  const data = gatewayEntries.map(e => e[1]);
+  const maxVal = data.length ? Math.max(...data) : 1;
+  const expectedTotal = totalWithDuplicates; // 應接收封包總數（理論上每個 gateway 可能接收到的上行數）
+  const backgroundColors = gatewayEntries.map(([, count], index) => {
+    const hue = (index * 137.5) % 360; // 黃金角度分佈顏色
+    const saturation = Math.min(85, 50 + (count / maxVal) * 35);
+    const lightness = Math.min(70, 45 + (count / maxVal) * 25);
+    return `hsla(${hue}, ${saturation}%, ${lightness}%, 0.85)`;
+  });
+
   // 銷毀現有圖表
-  if (nodeGwPolarChart) {
-    nodeGwPolarChart.destroy();
-    nodeGwPolarChart = null;
+  if (nodeGwBarChart) {
+    nodeGwBarChart.destroy();
+    nodeGwBarChart = null;
   }
-  
-  // 取得 canvas 元素
-  const ctx = document.getElementById('nodeGwPolarChart');
+
+  const ctx = document.getElementById('nodeGwBarChart');
   if (!ctx) {
-    console.error('[Chart] Gateway polar chart canvas not found');
+    console.error('[Chart] Gateway bar chart canvas not found');
     return;
   }
-  
-  // 建立極座標圖表
-  nodeGwPolarChart = new Chart(ctx, {
-    type: 'polarArea',
+
+  nodeGwBarChart = new Chart(ctx, {
+    type: 'bar',
     data: {
-      labels: labels,
-      datasets: [{
-        label: '接收次數',
-        data: data,
-        backgroundColor: backgroundColors,
-        borderWidth: 2,
-        borderColor: 'rgba(255, 255, 255, 0.8)'
-      }]
+      labels,
+      datasets: [
+        {
+          label: '接收次數',
+          data,
+          backgroundColor: backgroundColors,
+          borderColor: 'rgba(255,255,255,0.8)',
+          borderWidth: 1,
+          borderRadius: 4,
+          borderSkipped: false
+        },
+        // 虛線：應接收封包總數（若 totalWithDuplicates > 0 才顯示）
+        ...(expectedTotal > 0 ? [{
+          // 隱藏的承載 dataset：不顯示實際折線，僅用於 tooltip 與 plugin 觸發
+          type: 'line',
+          label: `應接收總數 (${expectedTotal})`,
+          data: labels.map(() => expectedTotal),
+          borderColor: 'rgba(0,0,0,0)', // 隱藏
+          pointRadius: 0,
+          hitRadius: 0,
+          hoverRadius: 0,
+          tension: 0,
+          isExpectedLine: true
+        }] : [])
+      ]
     },
     options: {
       responsive: true,
@@ -714,136 +1085,75 @@ function createPolarChartFromGatewayData(devname, devaddr, gatewayCount, totalWi
       plugins: {
         title: {
           display: true,
-          text: `${devname} - Gateway 接收分布`,
+          text: `${devname} - Gateway 接收分布 (Bar)`,
           font: { size: 16 },
           color: '#fff'
         },
-        legend: {
-          position: 'top',
-          labels: {
-            color: '#fff', // 確保圖例文字為白色
-            font: { size: 12 }, // 增加字體大小便於閱讀
-            generateLabels: function(chart) {
-              const data = chart.data;
-              if (data.labels.length && data.datasets.length) {
-                return data.labels.map((label, i) => {
-                  const value = data.datasets[0].data[i];
-                  const percentage = totalWithDuplicates > 0 ? ((value / totalWithDuplicates) * 100).toFixed(1) : '0.0';
-                  // 使用完整的 Gateway 名稱在圖例中（如果名稱太長會自動換行）
-                  const fullGatewayName = gatewayEntries[i][0];
-                  const displayName = fullGatewayName.length > 20 ? 
-                    fullGatewayName.slice(0, 10) + '...' + fullGatewayName.slice(-7) : 
-                    fullGatewayName;
-                  
-                  return {
-                    text: `${displayName}: ${value} (${percentage}%)`,
-                    fillStyle: data.datasets[0].backgroundColor[i],
-                    strokeStyle: '#fff', // 確保邊框為白色
-                    fontColor: '#fff', // 明確設定字體顏色為白色
-                    lineWidth: 1,
-                    index: i
-                  };
-                });
-              }
-              return [];
-            }
-          }
-        },
+        legend: { display: false },
         tooltip: {
-          backgroundColor: 'rgba(0, 0, 0, 0.9)', // 增加透明度
+          backgroundColor: 'rgba(0,0,0,0.85)',
           titleColor: '#fff',
           bodyColor: '#fff',
-          borderColor: 'rgba(255, 255, 255, 0.5)', // 增加邊框透明度
-          borderWidth: 1,
-          titleFont: { size: 14, weight: 'bold' },
-          bodyFont: { size: 13 },
+          borderColor: 'rgba(255,255,255,0.4)',
+            borderWidth: 1,
           callbacks: {
-            title: function(context) {
-              // 在 tooltip 標題顯示完整的 Gateway 名稱
-              if (context.length > 0) {
-                const fullGatewayName = gatewayEntries[context[0].dataIndex][0];
-                return `Gateway: ${fullGatewayName}`;
-              }
-              return '';
+            title: ctx => {
+              if (!ctx.length) return '';
+              const fullName = gatewayEntries[ctx[0].dataIndex][0];
+              return `Gateway: ${fullName}`;
             },
-            label: function(context) {
-              // context.parsed 是當前資料點的值
-              const value = context.parsed.r;
-              const percentage = totalWithDuplicates > 0 ? ((value / totalWithDuplicates) * 100).toFixed(1) : '0.0';
-              
-              return [
-                `接收次數: ${value}`,
-                `接收率: ${percentage}%`,
-                `排名: #${context.dataIndex + 1}`
-              ];
-            },
-            footer: function(context) {
-              // 可選：在 footer 顯示額外資訊
-              if (context.length > 0) {
-                return `(應接收次數: ${totalWithDuplicates})`;
+            label: ctx => {
+              // 若為虛線 dataset 則以不同格式顯示
+              if (ctx.dataset && ctx.dataset.isExpectedLine) {
+                return [`應接收總數: ${expectedTotal}`];
               }
-              return '';
-            }
+              const value = ctx.parsed.y;
+              const pct = totalWithDuplicates > 0 ? ((value / totalWithDuplicates) * 100).toFixed(1) : '0.0';
+              return [`接收次數: ${value}`, `接收率: ${pct}%`, `排名: #${ctx.dataIndex + 1}`];
+            },
+            footer: ctx => ctx.length ? `(應接收次數: ${totalWithDuplicates})` : ''
           }
         }
       },
       scales: {
-        r: {
+        x: {
+          title: { display: true, text: 'Gateway', color: '#fff' },
+          ticks: { color: '#fff', autoSkip: false, maxRotation: 45, minRotation: 0 },
+          grid: { color: 'rgba(255,255,255,0.1)' }
+        },
+        y: {
           beginAtZero: true,
-          angleLines: { 
-            display: true, 
-            color: 'rgba(255, 255, 255, 0.2)' // 增加透明度讓線條更明顯
-          },
-          grid: { 
-            circular: true, 
-            color: 'rgba(255, 255, 255, 0.2)' // 增加透明度讓格線更明顯
-          },
-          pointLabels: {
-            color: '#fff', // 確保角度標籤為白色
-            font: { 
-              size: 12, // 增加字體大小
-              weight: 'bold' // 加粗字體便於閱讀
-            },
-            // 自定義點標籤顯示，處理長名稱
-            callback: function(label, index) {
-              // 如果標籤太長，在這裡進一步處理顯示
-              if (label.length > 15) {
-                return label.slice(0, 12) + '...';
-              }
-              return label;
-            }
-          },
+          title: { display: true, text: '接收次數', color: '#fff' },
           ticks: {
-            z: 1, // 確保刻度文字繪製在 dataset 弧形之上
-            backdropColor: '#ffffffd5', // 純白，不透明
-            color: '#000000',         // 文字顏色（黑）
-            font: { size: 11 },
-            stepSize: Math.max(1, Math.ceil(Math.max(...data) / 5)),
-            callback: function(value) {
-              return Number.isInteger(value) ? value : '';
-            }
-          }
+            color: '#fff',
+            precision: 0,
+            callback: v => Number.isInteger(v) ? v : ''
+          },
+          grid: { color: 'rgba(255,255,255,0.15)' }
         }
       },
-      onClick: function(evt, elements) {
-        if (elements.length > 0) {
-          const element = elements[0];
-          const gatewayName = gatewayEntries[element.index][0];
-          const count = gatewayEntries[element.index][1];
+      onClick: (evt, elements) => {
+        if (elements.length) {
+          const el = elements[0];
+          const gatewayName = gatewayEntries[el.index][0];
+          const count = gatewayEntries[el.index][1];
           console.log(`[Chart] Clicked gateway: ${gatewayName}, count: ${count}`);
         }
       }
     }
   });
-  
-  console.log(`[Chart] Created gateway polar chart with ${gatewayCount.size} gateways`);
+
+  // 儲存期望值供 plugin 取用
+  nodeGwBarChart.$expectedTotal = expectedTotal;
+
+  console.log(`[Chart] Created gateway bar chart with ${gatewayCount.size} gateways`);
 }
 
 /**
  * Show empty state for gateway polar chart
  */
-function showGwPolarChartEmptyState() {
-  const chartContainer = document.getElementById('nodeGwPolarChart');
+function showGwBarChartEmptyState() {
+  const chartContainer = document.getElementById('nodeGwBarChart');
   if (chartContainer) {
     const container = chartContainer.parentElement;
     container.innerHTML = '<div style="display: flex; align-items: center; justify-content: center; height: 400px; color: #aaa; font-style: italic;">沒有可顯示的 Gateway 接收數據</div>';
@@ -855,14 +1165,14 @@ function showGwPolarChartEmptyState() {
  * @param {string} devname - Device name
  * @param {string} devaddr - Device address
  */
-function updateNodeGwPolarChart(devname, devaddr) {
+function updateNodeGwBarChart(devname, devaddr) {
   // 如果圖表不存在，則創建新的
-  if (!nodeGwPolarChart) {
-    createNodeGwPolarChart(devname, devaddr);
+  if (!nodeGwBarChart) {
+    createNodeGwBarChart(devname, devaddr);
     return;
   }
   
-  console.log('[Chart] Updating gateway polar chart for', devname, devaddr);
+  console.log('[Chart] Updating gateway bar chart for', devname, devaddr);
   
   // 優先使用 analytics 數據結構
   if (window.getCurrentAnalytics) {
@@ -898,15 +1208,15 @@ function updateNodeGwPolarChart(devname, devaddr) {
         
         if (gatewayCount.size === 0) {
           // 如果沒有接收器資料，清空圖表
-          nodeGwPolarChart.data.labels = [];
-          nodeGwPolarChart.data.datasets[0].data = [];
-          nodeGwPolarChart.data.datasets[0].backgroundColor = [];
-          nodeGwPolarChart.update();
+          nodeGwBarChart.data.labels = [];
+          nodeGwBarChart.data.datasets[0].data = [];
+          nodeGwBarChart.data.datasets[0].backgroundColor = [];
+          nodeGwBarChart.update();
           return;
         }
         
         // 使用 analytics 數據更新圖表
-        updatePolarChartWithGatewayData(devname, devaddr, gatewayCount, nodeStats.total.totalWithDuplicates);
+  updateGatewayBarChartData(devname, devaddr, gatewayCount, nodeStats.total.totalWithDuplicates);
         return;
       }
     }
@@ -953,10 +1263,10 @@ function updateNodeGwPolarChart(devname, devaddr) {
   
   if (filteredRecords.length === 0) {
     // 如果沒有資料，清空圖表
-    nodeGwPolarChart.data.labels = [];
-    nodeGwPolarChart.data.datasets[0].data = [];
-    nodeGwPolarChart.data.datasets[0].backgroundColor = [];
-    nodeGwPolarChart.update();
+  nodeGwBarChart.data.labels = [];
+  nodeGwBarChart.data.datasets[0].data = [];
+  nodeGwBarChart.data.datasets[0].backgroundColor = [];
+  nodeGwBarChart.update();
     return;
   }
   
@@ -1004,16 +1314,16 @@ function updateNodeGwPolarChart(devname, devaddr) {
   
   if (gatewayCount.size === 0) {
     // 如果沒有接收器資料，清空圖表
-    nodeGwPolarChart.data.labels = [];
-    nodeGwPolarChart.data.datasets[0].data = [];
-    nodeGwPolarChart.data.datasets[0].backgroundColor = [];
-    nodeGwPolarChart.update();
+  nodeGwBarChart.data.labels = [];
+  nodeGwBarChart.data.datasets[0].data = [];
+  nodeGwBarChart.data.datasets[0].backgroundColor = [];
+  nodeGwBarChart.update();
     return;
   }
   
   // 使用原始數據更新圖表（計算總數）
   const totalWithDuplicates = filteredRecords.length;
-  updatePolarChartWithGatewayData(devname, devaddr, gatewayCount, totalWithDuplicates);
+  updateGatewayBarChartData(devname, devaddr, gatewayCount, totalWithDuplicates);
 }
 
 /**
@@ -1023,122 +1333,93 @@ function updateNodeGwPolarChart(devname, devaddr) {
  * @param {Map} gatewayCount - Map<gateway, count>
  * @param {number} totalWithDuplicates - Total packet count for percentage calculation
  */
-function updatePolarChartWithGatewayData(devname, devaddr, gatewayCount, totalWithDuplicates) {
-  // 準備新的圖表資料
-  const labels = [];
-  const data = [];
-  const backgroundColors = [];
-  
-  // 轉換為陣列並排序
+function updateGatewayBarChartData(devname, devaddr, gatewayCount, totalWithDuplicates) {
+  ensureExpectedLinePluginRegistered();
   const gatewayEntries = Array.from(gatewayCount.entries()).sort((a, b) => b[1] - a[1]);
-  
-  gatewayEntries.forEach(([gateway, count], index) => {
-    // 改善 Gateway 名稱顯示方式
-    let shortName;
-    if (gateway.length <= 12) {
-      shortName = gateway; // 短名稱直接顯示
-    } else {
-      // 對於長名稱，顯示前6個字元 + ... + 最後6個字元
-      shortName = gateway;
-    }
-    labels.push(shortName);
-    data.push(count);
-    
-    // 依值動態著色
-    const hue = (index * 137.5) % 360; // 使用黃金角度分佈顏色
-    const saturation = Math.min(85, 50 + (count / Math.max(...gatewayEntries.map(e => e[1]))) * 35);
-    const lightness = Math.min(70, 45 + (count / Math.max(...gatewayEntries.map(e => e[1]))) * 25);
-    backgroundColors.push(`hsla(${hue}, ${saturation}%, ${lightness}%, 0.8)`);
+  const labels = gatewayEntries.map(([gateway]) => gateway.length <= 24 ? gateway : gateway.slice(0,12)+'...'+gateway.slice(-8));
+  const data = gatewayEntries.map(e => e[1]);
+  const maxVal = data.length ? Math.max(...data) : 1;
+  const expectedTotal = totalWithDuplicates; // 應接收封包總數
+  const backgroundColors = gatewayEntries.map(([, count], index) => {
+    const hue = (index * 137.5) % 360;
+    const saturation = Math.min(85, 50 + (count / maxVal) * 35);
+    const lightness = Math.min(70, 45 + (count / maxVal) * 25);
+    return `hsla(${hue}, ${saturation}%, ${lightness}%, 0.85)`;
   });
-  
-  // 更新圖表資料
-  nodeGwPolarChart.data.labels = labels;
-  nodeGwPolarChart.data.datasets[0].data = data;
-  nodeGwPolarChart.data.datasets[0].backgroundColor = backgroundColors;
-  
-  // 更新圖表標題
-  nodeGwPolarChart.options.plugins.title.text = `${devname} - Gateway 接收分布`;
-  
-  // 更新圖表刻度配置
-  nodeGwPolarChart.options.scales.r.ticks.stepSize = Math.max(1, Math.ceil(Math.max(...data) / 5));
-  
-  // 更新 tooltip 回調中的 gatewayEntries 引用
-  nodeGwPolarChart.options.plugins.tooltip.callbacks.title = function(context) {
-    if (context.length > 0) {
-      const fullGatewayName = gatewayEntries[context[0].dataIndex][0];
-      return `Gateway: ${fullGatewayName}`;
-    }
-    return '';
-  };
-  
-  // 更新 tooltip label 回調
-  nodeGwPolarChart.options.plugins.tooltip.callbacks.label = function(context) {
-    const value = context.parsed.r;
-    const percentage = totalWithDuplicates > 0 ? ((value / totalWithDuplicates) * 100).toFixed(1) : '0.0';
-    
-    return [
-      `接收次數: ${value}`,
-      `接收率: ${percentage}%`,
-      `排名: #${context.dataIndex + 1}`
-    ];
-  };
-  
-  // 更新 tooltip footer 回調
-  nodeGwPolarChart.options.plugins.tooltip.callbacks.footer = function(context) {
-    if (context.length > 0) {
-      return `(應接收次數: ${totalWithDuplicates})`;
-    }
-    return '';
-  };
-  
-  // 更新圖例生成邏輯
-  nodeGwPolarChart.options.plugins.legend.labels.generateLabels = function(chart) {
-    const data = chart.data;
-    if (data.labels.length && data.datasets.length) {
-      return data.labels.map((label, i) => {
-        const value = data.datasets[0].data[i];
-        const percentage = totalWithDuplicates > 0 ? ((value / totalWithDuplicates) * 100).toFixed(1) : '0.0';
-        // 使用完整的 Gateway 名稱在圖例中（如果名稱太長會自動換行）
-        const fullGatewayName = gatewayEntries[i][0];
-        const displayName = fullGatewayName.length > 20 ? 
-          fullGatewayName.slice(0, 10) + '...' + fullGatewayName.slice(-7) : 
-          fullGatewayName;
-        
-        return {
-          text: `${displayName}: ${value} (${percentage}%)`,
-          fillStyle: data.datasets[0].backgroundColor[i],
-          strokeStyle: '#fff', // 確保邊框為白色
-          fontColor: '#fff', // 明確設定字體顏色為白色
-          lineWidth: 1,
-          index: i
-        };
+
+  nodeGwBarChart.data.labels = labels;
+  nodeGwBarChart.data.datasets[0].data = data;
+  nodeGwBarChart.data.datasets[0].backgroundColor = backgroundColors;
+  nodeGwBarChart.options.plugins.title.text = `${devname} - Gateway 接收分布 (Bar)`;
+
+  // 找出或建立虛線 dataset
+  let expectedDsIndex = nodeGwBarChart.data.datasets.findIndex(ds => ds.isExpectedLine);
+  if (expectedTotal > 0) {
+    const lineData = labels.map(() => expectedTotal);
+    if (expectedDsIndex === -1) {
+      nodeGwBarChart.data.datasets.push({
+        type: 'line',
+        label: `應接收總數 (${expectedTotal})`,
+        data: lineData,
+        borderColor: 'rgba(0,0,0,0)',
+        pointRadius: 0,
+        hitRadius: 0,
+        hoverRadius: 0,
+        tension: 0,
+        isExpectedLine: true
       });
+    } else {
+      const ds = nodeGwBarChart.data.datasets[expectedDsIndex];
+      ds.data = lineData;
+      ds.label = `應接收總數 (${expectedTotal})`;
+      ds.borderColor = 'rgba(0,0,0,0)';
     }
-    return [];
+  } else if (expectedDsIndex !== -1) {
+    // 沒有 total 值則移除虛線
+    nodeGwBarChart.data.datasets.splice(expectedDsIndex, 1);
+  }
+
+  // 更新 chart instance 的期望值供 plugin 使用
+  nodeGwBarChart.$expectedTotal = expectedTotal;
+
+  // 更新刻度 step
+  const step = Math.max(1, Math.ceil(maxVal / 5));
+  if (nodeGwBarChart.options.scales && nodeGwBarChart.options.scales.y && nodeGwBarChart.options.scales.y.ticks) {
+    nodeGwBarChart.options.scales.y.ticks.stepSize = step;
+  }
+
+  // Tooltip callbacks 重新綁定（使用新的 gatewayEntries 閉包）
+  nodeGwBarChart.options.plugins.tooltip.callbacks.title = ctx => ctx.length ? `Gateway: ${gatewayEntries[ctx[0].dataIndex][0]}` : '';
+  nodeGwBarChart.options.plugins.tooltip.callbacks.label = ctx => {
+    if (ctx.dataset && ctx.dataset.isExpectedLine) {
+      return [`應接收總數: ${expectedTotal}`];
+    }
+    const value = ctx.parsed.y;
+    const pct = totalWithDuplicates > 0 ? ((value / totalWithDuplicates) * 100).toFixed(1) : '0.0';
+    return [`接收次數: ${value}`, `接收率: ${pct}%`, `排名: #${ctx.dataIndex + 1}`];
   };
-  
-  // 應用更新
-  nodeGwPolarChart.update();
-  
-  console.log(`[Chart] Updated gateway polar chart with ${gatewayCount.size} gateways`);
+  nodeGwBarChart.options.plugins.tooltip.callbacks.footer = ctx => ctx.length ? `(應接收次數: ${totalWithDuplicates})` : '';
+
+  nodeGwBarChart.update();
+  console.log(`[Chart] Updated gateway bar chart with ${gatewayCount.size} gateways`);
 }
 
 /**
  * Destroy node gateway polar chart
  */
-function destroyNodeGwPolarChart() {
-  if (nodeGwPolarChart) {
-    nodeGwPolarChart.destroy();
-    nodeGwPolarChart = null;
+function destroyNodeGwBarChart() {
+  if (nodeGwBarChart) {
+    nodeGwBarChart.destroy();
+    nodeGwBarChart = null;
   }
 }
 
 /**
  * Resize node gateway polar chart
  */
-function resizeNodeGwPolarChart() {
-  if (nodeGwPolarChart) {
-    nodeGwPolarChart.resize();
+function resizeNodeGwBarChart() {
+  if (nodeGwBarChart) {
+    nodeGwBarChart.resize();
   }
 }
 
@@ -1150,8 +1431,8 @@ window.addEventListener('resize', () => {
   if (nodeUpFreqChart) {
     setTimeout(resizeNodeUpFreqChart, 100);
   }
-  if (nodeGwPolarChart) {
-    setTimeout(resizeNodeGwPolarChart, 100);
+  if (nodeGwBarChart) {
+    setTimeout(resizeNodeGwBarChart, 100);
   }
 });
 
@@ -1171,8 +1452,18 @@ if (typeof window !== 'undefined') {
   window.updateNodeUpFreqChart = updateNodeUpFreqChart;
   window.destroyNodeUpFreqChart = destroyNodeUpFreqChart;
   window.resizeNodeUpFreqChart = resizeNodeUpFreqChart;
-  window.createNodeGwPolarChart = createNodeGwPolarChart;
-  window.updateNodeGwPolarChart = updateNodeGwPolarChart;
-  window.destroyNodeGwPolarChart = destroyNodeGwPolarChart;
-  window.resizeNodeGwPolarChart = resizeNodeGwPolarChart;
+  // New bar chart names
+  window.createNodeGwBarChart = createNodeGwBarChart;
+  window.updateNodeGwBarChart = updateNodeGwBarChart;
+  window.destroyNodeGwBarChart = destroyNodeGwBarChart;
+  window.resizeNodeGwBarChart = resizeNodeGwBarChart;
+  // Backward compatibility aliases
+  window.createNodeGwPolarChart = createNodeGwBarChart;
+  window.updateNodeGwPolarChart = updateNodeGwBarChart;
+  window.destroyNodeGwPolarChart = destroyNodeGwBarChart;
+  window.resizeNodeGwPolarChart = resizeNodeGwBarChart;
+  // GAP exports
+  window.renderNodeGapCharts = renderNodeGapCharts;
+  window.applyGapOverlayToTimeSeriesChart = applyGapOverlayToTimeSeriesChart;
+  window.setGapOverlayEnabled = setGapOverlayEnabled;
 }

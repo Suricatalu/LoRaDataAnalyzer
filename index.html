@@ -96,7 +96,7 @@
                             <span class="ex-badge inact" title="Inactive Since">INACT</span>
                             <span class="help-icon" data-tip="Mark nodes whose last upload till the overall last timestamp exceeds this number of minutes when enabled.">?</span>
                         </label>
-                        <input type="number" id="inactiveSinceMinutes" min="0" value="60" step="1" placeholder="e.g. 60" />
+                        <input type="number" id="inactiveSinceMinutes" min="0" value="90" step="1" placeholder="e.g. 90" />
                     </div>
                     
                     <!-- Max Gap >= N Minutes Filter (checkbox inside label, on left) -->
@@ -105,7 +105,7 @@
                             <span class="ex-badge gap" title="No Data Gap">GAP</span>
                             <span class="help-icon" data-tip="Find nodes that had no data for a continuous gap longer than this number of minutes when enabled.">?</span>
                         </label>
-                        <input type="number" id="noDataDuration" min="0" value="30" step="1" placeholder="e.g. 30" />
+                        <input type="number" id="noDataDuration" min="0" value="90" step="1" placeholder="e.g. 90" />
                     </div>
                 </div>
             </section>
@@ -159,6 +159,7 @@
                 <button class="tab-button" data-tab="nodeUpFreqChart">Uplink Freq Chart</button>
                 <button class="tab-button" data-tab="nodeGwChart">GW Chart</button>
                 <button class="tab-button" data-tab="nodeData">Node 資料</button>
+                <button class="tab-button" data-tab="nodeGapChart">Gaps</button>
             </div>
             <div class="tab-content" id="basicInfo">
                 <!-- Basic Info Content -->
@@ -231,9 +232,26 @@
                 <div class="node-charts-container">
                     <div class="chart-header">
                         <p class="chart-description">顯示選定節點的 RSSI 和 SNR 隨時間變化趨勢</p>
+                            <label style="font-size:12px; display:inline-flex; align-items:center; gap:4px; margin-top:6px;">
+                                <input type="checkbox" id="toggleGapOverlay" checked /> 顯示 <span class="ex-badge gap" title="No Data Gap">GAP</span> 區段
+                            </label>
                     </div>
                     <div class="node-chart-wrapper">
                         <canvas id="nodeTimeSeriesChart"></canvas>
+                    </div>
+                </div>
+            </div>
+            <div class="tab-content hidden" id="nodeGapChart">
+                <div class="node-charts-container">
+                    <div class="chart-header">
+                        <p class="chart-description">節點無資料 (Gap) 區段與每日最大 Gap 統計</p>
+                    </div>
+                    <div id="gapSummary" class="gap-summary"></div>
+                    <div class="node-chart-wrapper">
+                        <canvas id="nodeGapTimelineChart"></canvas>
+                    </div>
+                    <div class="node-chart-wrapper" style="margin-top:16px;">
+                        <canvas id="nodeDailyGapBarChart"></canvas>
                     </div>
                 </div>
             </div>
@@ -255,7 +273,7 @@
                         <p class="chart-description">顯示選定節點被各個接收器（Gateway）收到的次數與所有接收器收到的次數的分布</p>
                     </div>
                     <div class="node-chart-wrapper">
-                        <canvas id="nodeGwPolarChart"></canvas>
+                        <canvas id="nodeGwBarChart"></canvas>
                     </div>
                 </div>
             </div>

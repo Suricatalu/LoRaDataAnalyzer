@@ -362,7 +362,7 @@ function buildAnalytics(records, options = {}) {
   const nodeMap = groupByNode(upRecords);
 
   // 4. 計算 perNode 統計
-  const perNode = Array.from(nodeMap.values()).map(entry => calcNodeStat(entry, { gapThresholdMinutes, globalFrequencies, globalGateways }));
+  const perNode = Array.from(nodeMap.values()).map(entry => calcNodeStat(entry, { gapThresholdMinutes, globalFrequencies, globalGateways, startBoundary: fw.start }));
 
   // 4.A 無資料日補齊（依 timeRange 內所有日期）
   const timeRange = calcTimeRange(filteredRecords);
@@ -375,6 +375,28 @@ function buildAnalytics(records, options = {}) {
       fixedExpected: dailyFill.fixedExpected,
       minExpected: dailyFill.minExpected
     });
+
+    // 若啟用了 gapThresholdMinutes，將整天無資料(noData) 視為 24 小時 GAP，供每日與總體分類使用
+    if (gapThresholdMinutes) {
+      const FULL_DAY_MIN = 24 * 60; // 1440
+      for (const node of perNode) {
+        let hasNoDataGap = false;
+        for (const day of node.daily) {
+          if (day.noData) {
+            // 只有在尚未設定 maxGapMinutes 時才指定，以避免覆蓋可能先前計算出的值
+            if (typeof day.maxGapMinutes !== 'number' || day.maxGapMinutes < 0) {
+              day.maxGapMinutes = FULL_DAY_MIN;
+            }
+            hasNoDataGap = true;
+          }
+        }
+        if (hasNoDataGap && node.total && node.total.gapThresholdMinutes) {
+          // 讓總體也能被標記為 GAP（若有多日缺資料，max 仍為 1440）
+            const current = typeof node.total.maxGapMinutes === 'number' ? node.total.maxGapMinutes : -1;
+            node.total.maxGapMinutes = Math.max(current, FULL_DAY_MIN);
+        }
+      }
+    }
   }
 
   // 5. 全域統計 (重跑一次)
@@ -657,7 +679,7 @@ function groupByNode(upRecords) {
 // =============================
 // 核心計算：節點統計
 // =============================
-function calcNodeStat(entry, { gapThresholdMinutes, globalFrequencies, globalGateways } = {}) {
+function calcNodeStat(entry, { gapThresholdMinutes, globalFrequencies, globalGateways, startBoundary } = {}) {
   const records = entry.records.slice().sort((a,b)=>a.Time - b.Time);
   // Quality 只看上行 (已過濾)；RSSI/SNR NaN 不算
   const qualityAgg = { rssiSum:0, rssiCount:0, snrSum:0, snrCount:0 };
@@ -674,12 +696,28 @@ function calcNodeStat(entry, { gapThresholdMinutes, globalFrequencies, globalGat
   const { uniquePackets, totalWithDuplicates, duplicatePackets, expected, lost, lossRate, resetCount, fcntSpan, firstTime, lastTime } = computeCounters(fcntRecords);
 
   // gap detection (以分鐘為單位)
+  // Requirement 增強：
+  // (1) 若使用者指定的起始時間(startBoundary) 與 第一筆紀錄時間差距超過閾值，也列為 gap。
+  // (2) 每日 00:00:00 與 23:59:59 的邊界 gap 交由 buildNodeDaily 處理。
   let lossGapFcnt, lossGapTime, gapCount, maxGapMinutes;
   if (gapThresholdMinutes) {
     const gapThresholdMs = gapThresholdMinutes * 60000; // 轉換為毫秒用於計算
     lossGapFcnt = [];
     lossGapTime = [];
     maxGapMinutes = -1;
+
+    // (1) 起始時間到第一筆資料的 gap
+    if (startBoundary instanceof Date && !isNaN(startBoundary) && records.length) {
+      const diffStartMs = records[0].Time - startBoundary;
+      if (diffStartMs > gapThresholdMs) {
+        const diffMinutes = diffStartMs / 60000;
+        lossGapFcnt.push([null, isValidNumber(records[0].Fcnt)?records[0].Fcnt:null]);
+        lossGapTime.push([startBoundary.toISOString(), records[0].Time.toISOString()]);
+        if (diffMinutes > maxGapMinutes) maxGapMinutes = diffMinutes;
+      }
+    }
+
+    // 原本相鄰紀錄間的 gap
     for (let i=0;i<records.length-1;i++) {
       const a = records[i];
       const b = records[i+1];
@@ -797,20 +835,56 @@ function buildNodeDaily(allRecords, gapThresholdMinutes, globalFrequencies, glob
   const avgRSSI = rssiCount ? rssiSum / rssiCount : null;
   const avgSNR = snrCount ? snrSum / snrCount : null;
     
-    // 計算每日的 gap
-    let dailyLossGapFcnt, dailyLossGapTime;
-    if (gapThresholdMinutes && fcntRecords.length > 1) {
+    // 計算每日的 gap (含邊界)
+    let dailyLossGapFcnt, dailyLossGapTime, dailyMaxGapMinutes = -1;
+    if (gapThresholdMinutes) {
       dailyLossGapFcnt = [];
       dailyLossGapTime = [];
       const thresholdMs = gapThresholdMinutes * 60 * 1000;
-      for (let i = 0; i < fcntRecords.length - 1; i++) {
-        const a = fcntRecords[i];
-        const b = fcntRecords[i + 1];
-        const timeDiff = b.Time - a.Time;
-        if (timeDiff > thresholdMs) {
-          dailyLossGapFcnt.push([isValidNumber(a.Fcnt)?a.Fcnt:null, isValidNumber(b.Fcnt)?b.Fcnt:null]);
-          dailyLossGapTime.push([a.Time.toISOString(), b.Time.toISOString()]);
+
+      if (recs.length) {
+        // 建立當日 00:00:00 與 23:59:59 (UTC 基準) 邊界
+        const dayStart = new Date(date + 'T00:00:00.000Z');
+        const dayEnd = new Date(dayStart.getTime() + 86399000); // 23:59:59.000
+
+        // 邊界 -> 第一筆
+        const firstRec = recs[0];
+        const diffStartMs = firstRec.Time - dayStart;
+        if (diffStartMs > thresholdMs) {
+          const diffMinutes = diffStartMs / 60000;
+            dailyLossGapFcnt.push([null, isValidNumber(firstRec.Fcnt)?firstRec.Fcnt:null]);
+            dailyLossGapTime.push([dayStart.toISOString(), firstRec.Time.toISOString()]);
+            if (diffMinutes > dailyMaxGapMinutes) dailyMaxGapMinutes = diffMinutes;
         }
+
+        // 相鄰紀錄 gap（使用 recs，確保無 Fcnt 也能給時間 gap）
+        for (let i = 0; i < recs.length - 1; i++) {
+          const a = recs[i];
+          const b = recs[i + 1];
+          const timeDiff = b.Time - a.Time;
+          if (timeDiff > thresholdMs) {
+            dailyLossGapFcnt.push([isValidNumber(a.Fcnt)?a.Fcnt:null, isValidNumber(b.Fcnt)?b.Fcnt:null]);
+            dailyLossGapTime.push([a.Time.toISOString(), b.Time.toISOString()]);
+            const diffMinutes = timeDiff / 60000;
+            if (diffMinutes > dailyMaxGapMinutes) dailyMaxGapMinutes = diffMinutes;
+          }
+        }
+
+        // 最後一筆 -> 日終
+        const lastRec = recs[recs.length - 1];
+        const diffEndMs = dayEnd - lastRec.Time;
+        if (diffEndMs > thresholdMs) {
+          const diffMinutes = diffEndMs / 60000;
+          dailyLossGapFcnt.push([isValidNumber(lastRec.Fcnt)?lastRec.Fcnt:null, null]);
+          dailyLossGapTime.push([lastRec.Time.toISOString(), dayEnd.toISOString()]);
+          if (diffMinutes > dailyMaxGapMinutes) dailyMaxGapMinutes = diffMinutes;
+        }
+      }
+
+      if (dailyLossGapFcnt.length === 0) {
+        dailyLossGapFcnt = undefined;
+        dailyLossGapTime = undefined;
+        dailyMaxGapMinutes = -1;
       }
     }
     
@@ -843,6 +917,7 @@ function buildNodeDaily(allRecords, gapThresholdMinutes, globalFrequencies, glob
     if (dailyLossGapFcnt && dailyLossGapFcnt.length > 0) {
       dailyStat.lossGapFcnt = dailyLossGapFcnt;
       dailyStat.lossGapTime = dailyLossGapTime;
+      dailyStat.maxGapMinutes = dailyMaxGapMinutes; // 儲存每日最大 gap（含邊界）
     }
     
     result.push(dailyStat);
@@ -1080,16 +1155,11 @@ function buildThresholdView(perNode, classification, { upRecords = [], gapThresh
     for (const day of node.daily) {
       if (!dateNodeMap.has(day.date)) dateNodeMap.set(day.date, []);
       
-      // 計算該日期的最大 gap（如果有啟用 gap detection）
-      let dailyMaxGapMinutes = -1;
-      if (gapThresholdMinutes && nodeRecords.length > 1) {
+      // 取得該日期的最大 gap：優先使用 day.maxGapMinutes（含邊界），否則回退原本計算
+      let dailyMaxGapMinutes = (typeof day.maxGapMinutes === 'number') ? day.maxGapMinutes : -1;
+      if (gapThresholdMinutes && dailyMaxGapMinutes === -1) {
         const gapThresholdMs = gapThresholdMinutes * 60000; // 轉換為毫秒用於計算
-        // 取得該節點在此日期的所有記錄，計算當日最大間隔
-        const dayRecords = nodeRecords.filter(r => {
-          const recordDate = new Date(r.Time).toISOString().split('T')[0];
-          return recordDate === day.date;
-        });
-        
+        const dayRecords = nodeRecords.filter(r => new Date(r.Time).toISOString().split('T')[0] === day.date);
         if (dayRecords.length > 1) {
           dayRecords.sort((a, b) => new Date(a.Time) - new Date(b.Time));
           for (let i = 0; i < dayRecords.length - 1; i++) {
@@ -1101,7 +1171,7 @@ function buildThresholdView(perNode, classification, { upRecords = [], gapThresh
       }
 
       // 構建當日 metrics 並計算每日的例外命中（只考慮 resetCount 與 gap；不套用 inactiveSince 至 daily）
-      const metrics = {
+  const metrics = {
         lossRate: day.lossRate,
         resetCount: day.resetCount,
         avgRSSI: day.avgRSSI,

@@ -920,6 +920,38 @@ function populateNodeCharts(devname, devaddr) {
   });
 
   console.log(`[Chart] Created time series chart for ${devname} with ${chartData.length} data points`);
+
+  // 將圖表實例暴露到全域，供 GAP overlay 使用
+  try {
+    window.nodeTimeSeriesChart = nodeTimeSeriesChart;
+    window.getNodeTimeSeriesChart = () => nodeTimeSeriesChart;
+  } catch(e) {}
+
+  // 若 analytics 可用，套用 GAP overlay & 渲染 GAP tab
+  try {
+    if (window.getCurrentAnalytics) {
+      const analytics = window.getCurrentAnalytics();
+      if (analytics && Array.isArray(analytics.perNode)) {
+        const node = analytics.perNode.find(n => (n.id.devName === devname) || (n.id.devAddr === devaddr));
+        if (node) {
+          // GAP 顯示控制
+          const gapEnabled = document.getElementById('useNoDataDuration')?.checked;
+          if (gapEnabled) {
+            if (window.applyGapOverlayToTimeSeriesChart) window.applyGapOverlayToTimeSeriesChart(node);
+            if (window.renderNodeGapCharts) window.renderNodeGapCharts(node);
+            if (window.setGapOverlayEnabled) window.setGapOverlayEnabled(true);
+          } else {
+            // 停用 overlay 並清空目前已設定的區段
+            if (window.setGapOverlayEnabled) window.setGapOverlayEnabled(false);
+            if (window.nodeTimeSeriesChart) {
+              window.nodeTimeSeriesChart.$gapSegments = [];
+              window.nodeTimeSeriesChart.update();
+            }
+          }
+        }
+      }
+    }
+  } catch(e) { console.warn('[Chart] GAP overlay/render error', e); }
 }
 
 // Function to resize node chart
@@ -972,7 +1004,23 @@ function populateNodeDataTable(devname, devaddr) {
   const tableData = filteredRecords.map(r => {
     // Received / Time
     const rawTime = getField(r, 'Time', 'Received');
-    const received = rawTime ? (rawTime instanceof Date ? rawTime.toLocaleString() : new Date(rawTime).toLocaleString()) : '';
+    let received = '';
+    let dateObj = null;
+    if (rawTime instanceof Date) {
+      dateObj = rawTime;
+    } else if (typeof rawTime === 'string') {
+      const d = new Date(rawTime);
+      if (!isNaN(d.getTime())) dateObj = d;
+    }
+    function formatYMDHMS(d) {
+      const pad = n => String(n).padStart(2, '0');
+      return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+    }
+    if (dateObj) {
+      const epoch = dateObj.getTime();
+      // 使用固定長度的 YYYY-MM-DD HH:mm:ss 以確保字串排序正確，並加 data-order 保障排序依 epoch
+      received = `<span data-order="${epoch}">${formatYMDHMS(dateObj)}</span>`;
+    }
 
     // Type (support either parsed FrameType object or raw Type string)
     let typeVal = '';
@@ -1398,8 +1446,16 @@ function initializeTableRelated() {
               window.createNodeUpFreqChart(devname, devaddr);
           }
           // Create Node Gateway Polar Chart
-          if (window.createNodeGwPolarChart) {
-              window.createNodeGwPolarChart(devname, devaddr);
+      if (window.createNodeGwBarChart) {
+        window.createNodeGwBarChart(devname, devaddr);
+          }
+          // 初始化 GAP overlay checkbox 事件（僅綁一次）
+          const gapCbx = document.getElementById('toggleGapOverlay');
+          if (gapCbx && !gapCbx._gapBound) {
+            gapCbx._gapBound = true;
+            gapCbx.addEventListener('change', () => {
+              if (window.setGapOverlayEnabled) window.setGapOverlayEnabled(gapCbx.checked);
+            });
           }
       }
   });
@@ -1416,8 +1472,8 @@ function initializeTableRelated() {
           if (window.destroyNodeUpFreqChart) {
             window.destroyNodeUpFreqChart();
           }
-          if (window.destroyNodeGwPolarChart) {
-            window.destroyNodeGwPolarChart();
+          if (window.destroyNodeGwBarChart) {
+            window.destroyNodeGwBarChart();
           }
       }
   });
@@ -1478,8 +1534,8 @@ function initializeTableRelated() {
       // 如果切換到 gateway polar chart tab，重新調整極座標圖表佈局
       if (button.dataset.tab === 'nodeGwChart') {
         setTimeout(() => {
-          if (window.resizeNodeGwPolarChart) {
-            window.resizeNodeGwPolarChart();
+          if (window.resizeNodeGwBarChart) {
+            window.resizeNodeGwBarChart();
           }
         }, 150);
       }
@@ -1510,8 +1566,8 @@ window.addEventListener('resize', () => {
   if (window.resizeNodeUpFreqChart) {
     setTimeout(window.resizeNodeUpFreqChart, 100);
   }
-  if (window.resizeNodeGwPolarChart) {
-    setTimeout(window.resizeNodeGwPolarChart, 100);
+  if (window.resizeNodeGwBarChart) {
+    setTimeout(window.resizeNodeGwBarChart, 100);
   }
 });
 

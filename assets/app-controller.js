@@ -544,8 +544,12 @@ function setupEventListeners() {
   
   // Threshold slider/input
   document.getElementById('threshold')?.addEventListener('input', handleThresholdChange);
-  // Gap 條件
-  document.getElementById('useNoDataDuration')?.addEventListener('change', () => rebuildAnalytics());
+  // Gap 條件 (勾選才顯示 Gaps 分頁/內容)
+  document.getElementById('useNoDataDuration')?.addEventListener('change', () => {
+    updateGapTabVisibility();
+    rebuildAnalytics();
+    refreshOverlayIfOpen();
+  });
   document.getElementById('noDataDuration')?.addEventListener('input', () => rebuildAnalytics());
   // Inactive Since 條件
   document.getElementById('useInactiveSince')?.addEventListener('change', () => rebuildAnalytics());
@@ -565,6 +569,57 @@ function setupEventListeners() {
   // 顯示所有節點狀態按鈕
   document.getElementById('showAllNodesBtn')?.addEventListener('click', handleShowAllNodes);
   // Tabs (Overlay 已在 table-manager 內部處理)
+}
+
+/**
+ * 依據「No Data Gap」checkbox 是否勾選，顯示/隱藏 Gaps 分頁與內容
+ * - 未勾選：隱藏分頁按鈕與內容（不可點擊 / 不顯示 gapSummary 等）
+ * - 勾選：顯示分頁按鈕與內容
+ * 若目前作用中的分頁被隱藏，切換回基本資訊分頁
+ */
+function updateGapTabVisibility() {
+  const enabled = document.getElementById('useNoDataDuration')?.checked;
+  const gapTabBtn = document.querySelector('.tabs .tab-button[data-tab="nodeGapChart"]');
+  const gapTabContent = document.getElementById('nodeGapChart');
+  if (!gapTabBtn || !gapTabContent) return; // 結構不存在直接略過
+
+  if (!enabled) {
+    // 隱藏按鈕與內容
+    gapTabBtn.style.display = 'none';
+    gapTabContent.style.display = 'none';
+    // 若原本是 active，切回 basicInfo
+    if (gapTabBtn.classList.contains('active')) {
+      gapTabBtn.classList.remove('active');
+      const basicBtn = document.querySelector('.tabs .tab-button[data-tab="basicInfo"]');
+      const basicContent = document.getElementById('basicInfo');
+      if (basicBtn && basicContent) {
+        // 清除其它 active
+        document.querySelectorAll('.tabs .tab-button').forEach(b => b.classList.remove('active'));
+        document.querySelectorAll('.tab-content').forEach(c => c.classList.add('hidden'));
+        basicBtn.classList.add('active');
+        basicContent.classList.remove('hidden');
+      }
+    }
+  } else {
+    // 顯示按鈕與內容（內容僅在被選取時顯示，維持原本 hidden 狀態）
+    gapTabBtn.style.display = '';
+    gapTabContent.style.display = '';
+  }
+}
+
+/**
+ * 確保 nodeData tab-content 永遠位於 overlay-content 內的最後位置
+ * 若未在最後則重新 append（不影響事件與狀態）
+ */
+function ensureNodeDataTabLast() {
+  const overlayContent = document.querySelector('#nodeOverlay .overlay-content');
+  const nodeData = document.getElementById('nodeData');
+  if (!overlayContent || !nodeData) return;
+  // 只在不是最後一個子元素時調整
+  if (overlayContent.lastElementChild !== nodeData) {
+    overlayContent.appendChild(nodeData);
+    console.log('[App] Repositioned #nodeData to last inside overlay-content');
+  }
 }
 
 /** 設定拖放上傳功能 */
@@ -810,10 +865,10 @@ function refreshOverlayIfOpen() {
   } else if (window.createNodeUpFreqChart) {
     window.createNodeUpFreqChart(devname, devaddr);
   }
-  if (window.updateNodeGwPolarChart) {
-    window.updateNodeGwPolarChart(devname, devaddr);
-  } else if (window.createNodeGwPolarChart) {
-    window.createNodeGwPolarChart(devname, devaddr);
+  if (window.updateNodeGwBarChart) {
+    window.updateNodeGwBarChart(devname, devaddr);
+  } else if (window.createNodeGwBarChart) {
+    window.createNodeGwBarChart(devname, devaddr);
   }
 }
 
@@ -986,6 +1041,9 @@ document.addEventListener('DOMContentLoaded', () => {
   if (!checkModulesLoaded()) return;
   initializeApp();
   initializeTableRelated();
+  // 初始根據 checkbox 狀態決定是否顯示 Gaps 分頁
+  updateGapTabVisibility();
+  ensureNodeDataTabLast();
 });
 
 // 暴露全域（與舊版名稱不同避免衝突）
@@ -995,3 +1053,5 @@ window.handleShowAllNodes = handleShowAllNodes;
 window.rebuildAnalytics = rebuildAnalytics;
 window.getCurrentAnalytics = () => currentAnalytics;
 window.getRawRecords = () => rawRecords;
+window.updateGapTabVisibility = updateGapTabVisibility;
+window.ensureNodeDataTabLast = ensureNodeDataTabLast;

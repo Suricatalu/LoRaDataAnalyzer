@@ -165,14 +165,17 @@ function parseFrameType(raw) {
  */
 function parseTime(raw) {
   if (!raw) return new Date();
-  let normalized = raw.trim();
-  // 若為 'YYYY-MM-DD HH:mm:ss'
-  if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(normalized)) {
-    normalized = normalized.replace(' ', 'T') + 'Z';
+  const t = raw.trim();
+  // 原本版本強制把 'YYYY-MM-DD HH:mm:ss' 視為 UTC 並加 'Z'，導致顯示時區偏移 (+8h 等)
+  // 這裡改為：若符合純日期時間格式，視為「本地時間」建立 Date 物件，不再附加 'Z'。
+  if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(t)) {
+    const [datePart, timePart] = t.split(' ');
+    const [Y, M, D] = datePart.split('-').map(Number);
+    const [h, m, s] = timePart.split(':').map(Number);
+    return new Date(Y, M - 1, D, h, m, s);
   }
-  const d = new Date(normalized);
-  if (isNaN(d.getTime())) return new Date();
-  return d;
+  const d = new Date(t);
+  return isNaN(d.getTime()) ? new Date() : d;
 }
 
 /**
