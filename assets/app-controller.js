@@ -776,10 +776,10 @@ function setupEventListeners() {
   });
   document.getElementById('noDataDuration')?.addEventListener('input', () => rebuildAnalytics());
   // Inactive Since 條件
-  document.getElementById('useInactiveSince')?.addEventListener('change', () => rebuildAnalytics());
+  document.getElementById('useInactiveSince')?.addEventListener('change', () => { rebuildAnalytics(); refreshOverlayIfOpen(); });
   document.getElementById('inactiveSinceMinutes')?.addEventListener('input', () => rebuildAnalytics());
   // FCNT Issue 條件
-  document.getElementById('useFcntIssue')?.addEventListener('change', () => rebuildAnalytics());
+  document.getElementById('useFcntIssue')?.addEventListener('change', () => { rebuildAnalytics(); refreshOverlayIfOpen(); });
   document.getElementById('fcntrIssueThreshold')?.addEventListener('input', () => rebuildAnalytics());
   // 時間視窗（移除 checkbox 監聽器，只監聽日期輸入）
   document.getElementById('startDate')?.addEventListener('input', () => {
@@ -1061,6 +1061,10 @@ function refreshOverlayIfOpen() {
   // 重新載入 overlay 內容
   if (window.populateBasicInfo) {
     window.populateBasicInfo(devname, devaddr);
+  }
+  // 重新套用標題徽章（依總體分析 + 勾選的 Exception）
+  if (typeof window.updateOverlayTitleBadges === 'function') {
+    window.updateOverlayTitleBadges(devname, devaddr);
   }
   if (window.populateNodeDataTable) {
     window.populateNodeDataTable(devname, devaddr);

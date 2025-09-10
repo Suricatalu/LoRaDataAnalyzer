@@ -1411,8 +1411,13 @@ function initializeTableRelated() {
           const devname = event.target.dataset.devname;
           const devaddr = event.target.dataset.devaddr;
 
-          // 更新 Overlay 標題和內容
-          document.getElementById('overlayTitle').textContent = `Device: ${devname} (addr: ${devaddr})`;
+          // 更新 Overlay 標題與 Exception 徽章（依總體分析 + 已勾選的 Exception 選項）
+          if (typeof window.updateOverlayTitleBadges === 'function') {
+            window.updateOverlayTitleBadges(devname, devaddr);
+          } else {
+            const titleEl = document.getElementById('overlayTitle');
+            if (titleEl) titleEl.textContent = `Device: ${devname} (addr: ${devaddr})`;
+          }
           
           // 顯示當前的時間範圍篩選條件
           const timeRange = getTimeRangeFilter();
@@ -1541,6 +1546,66 @@ function initializeTableRelated() {
     });
   });
 };
+
+/**
+ * 更新 Overlay 標題並在後方附加 Exception 小徽章
+ * 依據：
+ *  - 總體（overall）分析結果的 exceptionTags/exceptionLabels（非每日）
+ *  - 僅在有勾選任一 Exception 選項（FCNT / GAP / INACT）時顯示
+ */
+function updateOverlayTitleBadges(devname, devaddr) {
+  const titleEl = document.getElementById('overlayTitle');
+  if (!titleEl) return;
+
+  // 先設定標題文字
+  titleEl.textContent = `Device: ${devname} (addr: ${devaddr})`;
+
+  // 僅在有勾選 Exception 選項時顯示徽章
+  const useFcnt = document.getElementById('useFcntIssue')?.checked;
+  const useGap = document.getElementById('useNoDataDuration')?.checked;
+  const useInactive = document.getElementById('useInactiveSince')?.checked;
+  if (!useFcnt && !useGap && !useInactive) return;
+
+  // 取得當前分析
+  const analytics = (typeof window.getCurrentAnalytics === 'function') ? window.getCurrentAnalytics() : null;
+  if (!analytics || !Array.isArray(analytics.perNode)) return;
+  const node = analytics.perNode.find(n => (n.id?.devName === devname) || (n.id?.devAddr === devaddr));
+  if (!node || !node.total) return;
+
+  // 只依據總體結果
+  const tags = Array.isArray(node.total.exceptionTags) ? node.total.exceptionTags : [];
+  const labels = Array.isArray(node.total.exceptionLabels) ? node.total.exceptionLabels : [];
+  const noteMap = node.total.exceptionNoteMap || {};
+  if (!tags.length) return;
+
+  // 僅顯示與目前勾選的 Exception 類別相符者
+  const allow = new Set();
+  if (useFcnt) allow.add('resetCount');
+  if (useGap) allow.add('maxGapMinutes');
+  if (useInactive) allow.add('inactiveSinceMinutes');
+
+  const tagToClass = { resetCount: 'rst', maxGapMinutes: 'gap', inactiveSinceMinutes: 'inact' };
+  const tagToCode = { resetCount: 'RST', maxGapMinutes: 'GAP', inactiveSinceMinutes: 'INACT' };
+
+  // 建立徽章並附加在標題後方
+  tags.forEach((tag, i) => {
+    if (!allow.has(tag)) return;
+    const cls = tagToClass[tag];
+    const code = tagToCode[tag] || 'EX';
+    const label = labels[i] || code;
+    const notes = Array.isArray(noteMap[tag]) ? noteMap[tag] : [];
+    const span = document.createElement('span');
+    span.className = `ex-badge ${cls || ''}`.trim();
+    span.textContent = code;
+    // Tooltip 顯示完整標籤與規則說明
+    const tipLines = [label].concat(notes);
+    span.title = tipLines.join('\n');
+    titleEl.appendChild(span);
+  });
+}
+
+// 暴露全域函式
+window.updateOverlayTitleBadges = updateOverlayTitleBadges;
 
 window.populateNodeDataTable = populateNodeDataTable;
 window.populateNodeCharts = populateNodeCharts;
