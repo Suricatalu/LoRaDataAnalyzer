@@ -782,6 +782,7 @@ function calcNodeStat(entry, { gapThresholdMinutes, globalFrequencies, globalGat
       lost, 
       lossRate, 
       duplicatePackets, 
+      duplicateRate: (totalWithDuplicates > 0) ? (duplicatePackets / totalWithDuplicates) * 100 : -1,
       resetCount,
       avgRSSI: qualityAgg.rssiCount ? qualityAgg.rssiSum / qualityAgg.rssiCount : null,
       avgSNR: qualityAgg.snrCount ? qualityAgg.snrSum / qualityAgg.snrCount : null,
@@ -974,6 +975,7 @@ function buildNodeDaily(allRecords, gapThresholdMinutes, globalFrequencies, glob
       fcntSpan: counters.fcntSpan,
       duplicatePackets: counters.duplicatePackets,
       totalWithDuplicates: counters.totalWithDuplicates,
+      duplicateRate: (counters.totalWithDuplicates > 0) ? (counters.duplicatePackets / counters.totalWithDuplicates) * 100 : -1,
       resetCount: counters.resetCount,
       dataRatesUsed: Array.from(dr).sort()
     };
@@ -1025,6 +1027,7 @@ function fillPerNodeMissingDaily(perNode, allDates, { globalFrequencies, globalG
         fcntSpan: -1,
         duplicatePackets: 0,
         totalWithDuplicates: 0,
+        duplicateRate: -1,
         resetCount: 0,
         dataRatesUsed: [],
         // frequency stats: 全為 0
@@ -1179,6 +1182,7 @@ function calcGlobal(upRecords, timezone) {
     expected: counters.expected,
     lost: counters.lost,
     lossRate: counters.lossRate,
+    duplicateRate: (counters.totalWithDuplicates > 0) ? (counters.duplicatePackets / counters.totalWithDuplicates) * 100 : -1,
     avgRSSI: qualityAgg.rssiCount ? qualityAgg.rssiSum / qualityAgg.rssiCount : null,
     avgSNR: qualityAgg.snrCount ? qualityAgg.snrSum / qualityAgg.snrCount : null,
     firstTime: counters.firstTime ? counters.firstTime.toISOString() : null,

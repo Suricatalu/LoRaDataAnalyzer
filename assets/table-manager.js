@@ -19,7 +19,7 @@ function getDataTableConfig(tableType) {
     columnDefs: [
       // 數值欄位右對齊
       {
-        targets: [2, 4, 5, 8, 9, 10, 11], // Loss Rate, Avg RSSI, Avg SNR, FCNT Delta, Duplicate Count, Total Uplink Count, FCNT Reset Count
+        targets: [2, 4, 5, 8, 9, 10, 11, 12], // Loss Rate, Avg RSSI, Avg SNR, Duplicate Rate, Duplicate Count, Total Uplink, Expected Uplink, FCNT Reset Count
         className: 'dt-body-right'
       },
       // 時間欄位置中對齊
@@ -29,7 +29,7 @@ function getDataTableConfig(tableType) {
       },
       // DevAddr、Exception 和 Used Data Rate 置中對齊
       {
-        targets: [1, 3, 12], // Devaddr, Exception, Used Data Rate
+        targets: [1, 3, 13], // Devaddr, Exception, Used Data Rate
         className: 'dt-body-center'
       }
     ],
@@ -68,9 +68,10 @@ function getDataTableConfig(tableType) {
       { title: "Avg SNR", data: "avgSNR" },
       { title: "First Uplink Time", data: "firstUplinkTime" },
       { title: "Last Uplink Time", data: "lastUplinkTime" },
-      { title: "FCNT Delta", data: "fcntDelta" },
+      { title: "Duplicate Rate (%)", data: "duplicateRate" },
       { title: "Duplicate Count", data: "duplicateCount" },
       { title: "Total Uplink Count", data: "totalUplinkCount" },
+      { title: "Expected Uplink Count", data: "expectedUplinkCount" },
       { title: "FCNT Reset Count", data: "fcntResetCount" },
       { title: "Used Data Rate", data: "usedDataRate" }
     ];
@@ -123,8 +124,8 @@ function updateTableHeader(dataType) {
   tr.innerHTML = '';
   
   if (dataType === 'nodeStats') {
-    // v2 Node Statistics headers (perNode.total + timeline 部分欄位)
-  ['Devname', 'Devaddr', 'Loss Rate (%)', 'Exception', 'Avg RSSI', 'Avg SNR', 'First Uplink Time', 'Last Uplink Time', 'FCNT Delta', 'Duplicate Count', 'Total Uplink Count', 'FCNT Reset Count', 'Used Data Rate'].forEach(header => {
+    // v2 Node Statistics headers (perNode.total + timeline 部分欄位) - 移除 FCNT Delta
+  ['Devname', 'Devaddr', 'Loss Rate (%)', 'Exception', 'Avg RSSI', 'Avg SNR', 'First Uplink Time', 'Last Uplink Time', 'Duplicate Rate (%)', 'Duplicate Count', 'Total Uplink Count', 'Expected Uplink Count', 'FCNT Reset Count', 'Used Data Rate'].forEach(header => {
       const th = document.createElement('th');
       th.textContent = header;
       tr.appendChild(th);
@@ -192,9 +193,9 @@ function showNodeStatistics(nodeStats, selectedDate = null) {
     
     if (!nodeStats || nodeStats.length === 0) {
       // If no data, show empty state
-      const tr = document.createElement('tr');
-      const td = document.createElement('td');
-  td.colSpan = 13; // Correct colspan for nodeStats (新增 Exception 欄)
+    const tr = document.createElement('tr');
+    const td = document.createElement('td');
+  td.colSpan = 14; // Correct colspan for nodeStats after adding 2 columns
       td.textContent = 'No Data Available';
       td.style.textAlign = 'center';
       td.style.padding = '20px';
@@ -222,6 +223,10 @@ function showNodeStatistics(nodeStats, selectedDate = null) {
               fcntSpan: dailyStats.fcntSpan,
               duplicatePackets: dailyStats.duplicatePackets,
               totalWithDuplicates: dailyStats.totalWithDuplicates,
+              expected: dailyStats.expected,
+              duplicateRate: (typeof dailyStats.totalWithDuplicates === 'number' && dailyStats.totalWithDuplicates > 0)
+                ? (dailyStats.duplicatePackets / dailyStats.totalWithDuplicates) * 100
+                : -1,
               resetCount: dailyStats.resetCount,
               dataRatesUsed: dailyStats.dataRatesUsed || []
             };
@@ -236,6 +241,8 @@ function showNodeStatistics(nodeStats, selectedDate = null) {
               fcntSpan: null,
               duplicatePackets: null,
               totalWithDuplicates: null,
+              expected: null,
+              duplicateRate: null,
               resetCount: null,
               dataRatesUsed: []
             };
@@ -251,6 +258,10 @@ function showNodeStatistics(nodeStats, selectedDate = null) {
             fcntSpan: node.timeline?.fcntSpan,
             duplicatePackets: node.total?.duplicatePackets,
             totalWithDuplicates: node.total?.totalWithDuplicates,
+            expected: node.total?.expected,
+            duplicateRate: (typeof node.total?.totalWithDuplicates === 'number' && node.total.totalWithDuplicates > 0)
+              ? (node.total.duplicatePackets / node.total.totalWithDuplicates) * 100
+              : -1,
             resetCount: node.total?.resetCount,
             dataRatesUsed: node.total?.dataRatesUsed || []
           };
@@ -284,14 +295,15 @@ function showNodeStatistics(nodeStats, selectedDate = null) {
           'Avg SNR': safeToFixed(statsData.avgSNR, 2),
           'First Uplink Time': statsData.firstTime ? new Date(statsData.firstTime).toLocaleString() : '',
           'Last Uplink Time': statsData.lastTime ? new Date(statsData.lastTime).toLocaleString() : '',
-          'FCNT Delta': statsData.fcntSpan ?? '',
           'Duplicate Count': statsData.duplicatePackets ?? '',
+          'Duplicate Rate (%)': safeToFixed(statsData.duplicateRate, 2),
+          'Expected Uplink Count': statsData.expected ?? '',
           'Total Uplink Count': statsData.totalWithDuplicates ?? '',
           'FCNT Reset Count': statsData.resetCount ?? '',
     'Used Data Rate': Array.from(statsData.dataRatesUsed).join(', '),
         };
 
-  ['Devname', 'Devaddr', 'Loss Rate (%)', 'Exception', 'Avg RSSI', 'Avg SNR', 'First Uplink Time', 'Last Uplink Time', 'FCNT Delta', 'Duplicate Count', 'Total Uplink Count', 'FCNT Reset Count', 'Used Data Rate'].forEach(key => {
+  ['Devname', 'Devaddr', 'Loss Rate (%)', 'Exception', 'Avg RSSI', 'Avg SNR', 'First Uplink Time', 'Last Uplink Time', 'Duplicate Rate (%)', 'Duplicate Count', 'Total Uplink Count', 'Expected Uplink Count', 'FCNT Reset Count', 'Used Data Rate'].forEach(key => {
           const td = document.createElement('td');
           if (key === 'Devname') {
             const link = document.createElement('a');
@@ -374,6 +386,10 @@ function showNodeStatistics(nodeStats, selectedDate = null) {
               fcntSpan: dailyStats.fcntSpan,
               duplicatePackets: dailyStats.duplicatePackets,
               totalWithDuplicates: dailyStats.totalWithDuplicates,
+              expected: dailyStats.expected,
+              duplicateRate: (typeof dailyStats.totalWithDuplicates === 'number' && dailyStats.totalWithDuplicates > 0)
+                ? (dailyStats.duplicatePackets / dailyStats.totalWithDuplicates) * 100
+                : -1,
               resetCount: dailyStats.resetCount,
               dataRatesUsed: dailyStats.dataRatesUsed || []
             };
@@ -388,6 +404,8 @@ function showNodeStatistics(nodeStats, selectedDate = null) {
               fcntSpan: null,
               duplicatePackets: null,
               totalWithDuplicates: null,
+              expected: null,
+              duplicateRate: null,
               resetCount: null,
               dataRatesUsed: []
             };
@@ -403,6 +421,10 @@ function showNodeStatistics(nodeStats, selectedDate = null) {
             fcntSpan: node.timeline?.fcntSpan,
             duplicatePackets: node.total?.duplicatePackets,
             totalWithDuplicates: node.total?.totalWithDuplicates,
+            expected: node.total?.expected,
+            duplicateRate: (typeof node.total?.totalWithDuplicates === 'number' && node.total.totalWithDuplicates > 0)
+              ? (node.total.duplicatePackets / node.total.totalWithDuplicates) * 100
+              : -1,
             resetCount: node.total?.resetCount,
             dataRatesUsed: node.total?.dataRatesUsed || []
           };
@@ -451,8 +473,9 @@ function showNodeStatistics(nodeStats, selectedDate = null) {
           avgSNR: safeToFixed(statsData.avgSNR, 2),
           firstUplinkTime: statsData.firstTime ? new Date(statsData.firstTime).toLocaleString() : '',
           lastUplinkTime: statsData.lastTime ? new Date(statsData.lastTime).toLocaleString() : '',
-          fcntDelta: statsData.fcntSpan ?? '',
           duplicateCount: statsData.duplicatePackets ?? '',
+          duplicateRate: safeToFixed(statsData.duplicateRate, 2),
+          expectedUplinkCount: statsData.expected ?? '',
           totalUplinkCount: statsData.totalWithDuplicates ?? '',
           fcntResetCount: statsData.resetCount ?? '',
           usedDataRate: Array.from(statsData.dataRatesUsed).join(', ')
