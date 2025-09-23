@@ -1190,79 +1190,45 @@ function populateBasicInfo(devname, devaddr) {
   const timeRangeText = getTimeRangeText(timeFilter);
   document.getElementById('basicTimeRange').textContent = timeRangeText;
   
-  // Get filtered records to calculate basic statistics
-  if (!window.getRawRecords) {
-    console.warn('[BasicInfo] No getRawRecords function available');
+  // Use analytics perNode stats directly to keep consistency with the table
+  if (typeof window.getCurrentAnalytics !== 'function') {
+    console.warn('[BasicInfo] getCurrentAnalytics not available');
     clearBasicInfo();
     return;
-  }
-  
-  const recs = window.getRawRecords() || [];
-  
-  console.log(`[BasicInfo] Total raw records available: ${recs.length}`);
-  if (recs.length > 0) {
-    console.log('[BasicInfo] Sample record fields:', Object.keys(recs[0]));
-  }
-  
-  // Normalize lookup values for comparison
-  const devnameKey = (devname || '').toString().trim().toLowerCase();
-  const devaddrKey = (devaddr || '').toString().trim().toLowerCase();
-  
-  console.log(`[BasicInfo] Looking for device: name="${devnameKey}", addr="${devaddrKey}"`);
-  
-  // Define getField helper for this scope
-  function getField(obj, ...keys) {
-    if (!obj) return undefined;
-    // direct access first
-    for (const k of keys) {
-      if (k in obj && obj[k] !== undefined && obj[k] !== null) return obj[k];
-    }
-    // case-insensitive fallback
-    const lowerMap = Object.keys(obj).reduce((acc, k) => { acc[k.toLowerCase()] = obj[k]; return acc; }, {});
-    for (const k of keys) {
-      const v = lowerMap[k.toLowerCase()];
-      if (v !== undefined && v !== null) return v;
-    }
-    return undefined;
   }
 
-  // Filter by device name/address first
-  let filteredRecords = recs.filter(r => {
-    const rn = (getField(r, 'Devname', 'DevName', 'Device Name') || '').toString().trim().toLowerCase();
-    const ra = (getField(r, 'Devaddr', 'DevAddr') || '').toString().trim().toLowerCase();
-    return rn === devnameKey || ra === devaddrKey || rn === devaddrKey || ra === devnameKey;
-  });
-  
-  console.log(`[BasicInfo] Found ${filteredRecords.length} records for device ${devname}/${devaddr} before time filtering`);
-  
-  // Apply time range filter
-  filteredRecords = applyTimeRangeFilter(filteredRecords, timeFilter);
-  
-  console.log(`[BasicInfo] Found ${filteredRecords.length} records for device ${devname}/${devaddr} after time filtering`);
-  
-  if (filteredRecords.length === 0) {
-    console.warn('[BasicInfo] No records found after filtering');
+  const analytics = window.getCurrentAnalytics();
+  if (!analytics || !Array.isArray(analytics.perNode)) {
+    console.warn('[BasicInfo] Analytics not ready');
     clearBasicInfo();
     return;
   }
-  
-  // Calculate basic statistics
-  const stats = calculateBasicStats(filteredRecords);
-  
-  // Update UI elements
-  document.getElementById('basicAvgRSSI').textContent = 
-    stats.avgRSSI !== null ? `${stats.avgRSSI.toFixed(2)} dBm` : '-';
-  document.getElementById('basicAvgSNR').textContent = 
-    stats.avgSNR !== null ? `${stats.avgSNR.toFixed(2)} dB` : '-';
-  document.getElementById('basicLossRate').textContent = 
-    stats.lossRate !== null ? `${stats.lossRate.toFixed(2)}%` : '-';
-  document.getElementById('basicTotalPackets').textContent = stats.totalPackets.toString();
-  document.getElementById('basicDuplicatePackets').textContent = stats.duplicatePackets.toString();
-  document.getElementById('basicResetCount').textContent = stats.resetCount.toString();
-  document.getElementById('basicFirstTime').textContent = 
-    stats.firstTime ? stats.firstTime.toLocaleString() : '-';
-  document.getElementById('basicLastTime').textContent = 
-    stats.lastTime ? stats.lastTime.toLocaleString() : '-';
+
+  const node = analytics.perNode.find(n => (n.id?.devName === devname) || (n.id?.devAddr === devaddr));
+  if (!node || !node.total || !node.timeline) {
+    console.warn('[BasicInfo] Node not found in analytics or missing totals/timeline');
+    clearBasicInfo();
+    return;
+  }
+
+  const avgRSSI = (typeof node.total.avgRSSI === 'number' && isFinite(node.total.avgRSSI)) ? `${node.total.avgRSSI.toFixed(2)} dBm` : '-';
+  const avgSNR = (typeof node.total.avgSNR === 'number' && isFinite(node.total.avgSNR)) ? `${node.total.avgSNR.toFixed(2)} dB` : '-';
+  const lossRate = (typeof node.total.lossRate === 'number' && node.total.lossRate >= 0 && isFinite(node.total.lossRate)) ? `${node.total.lossRate.toFixed(2)}%` : '-';
+  const totalPackets = (typeof node.total.totalWithDuplicates === 'number') ? String(node.total.totalWithDuplicates) : '-';
+  const duplicatePackets = (typeof node.total.duplicatePackets === 'number') ? String(node.total.duplicatePackets) : '-';
+  const resetCount = (typeof node.total.resetCount === 'number') ? String(node.total.resetCount) : '-';
+  const firstTime = node.timeline.firstTime ? new Date(node.timeline.firstTime).toLocaleString() : '-';
+  const lastTime = node.timeline.lastTime ? new Date(node.timeline.lastTime).toLocaleString() : '-';
+
+  // Update UI elements with analytics values
+  document.getElementById('basicAvgRSSI').textContent = avgRSSI;
+  document.getElementById('basicAvgSNR').textContent = avgSNR;
+  document.getElementById('basicLossRate').textContent = lossRate;
+  document.getElementById('basicTotalPackets').textContent = totalPackets;
+  document.getElementById('basicDuplicatePackets').textContent = duplicatePackets;
+  document.getElementById('basicResetCount').textContent = resetCount;
+  document.getElementById('basicFirstTime').textContent = firstTime;
+  document.getElementById('basicLastTime').textContent = lastTime;
 }
 
 // Helper function to clear basic info when no data available
