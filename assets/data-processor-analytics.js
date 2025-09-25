@@ -733,6 +733,7 @@ function calcNodeStat(entry, { gapThresholdMinutes, globalFrequencies, globalGat
   // Requirement 增強：
   // (1) 若使用者指定的起始時間(startBoundary) 與 第一筆紀錄時間差距超過閾值，也列為 gap。
   // (2) 每日 00:00:00 與 23:59:59 的邊界 gap 交由 buildNodeDaily 處理。
+  // (3) 若使用者指定的結束時間(endBoundary) 與 最後一筆紀錄時間差距超過閾值，也列為 gap（原本缺漏）。
   let lossGapFcnt, lossGapTime, gapCount, maxGapMinutes;
   if (gapThresholdMinutes) {
     const gapThresholdMs = gapThresholdMinutes * 60000; // 轉換為毫秒用於計算
@@ -760,6 +761,18 @@ function calcNodeStat(entry, { gapThresholdMinutes, globalFrequencies, globalGat
         lossGapFcnt.push([isValidNumber(a.Fcnt)?a.Fcnt:null, isValidNumber(b.Fcnt)?b.Fcnt:null]);
         lossGapTime.push([a.Time.toISOString(), b.Time.toISOString()]);
         const diffMinutes = diffMs / 60000; // 轉換為分鐘
+        if (diffMinutes > maxGapMinutes) maxGapMinutes = diffMinutes;
+      }
+    }
+
+    // (3) 最後一筆到結束時間 endBoundary 的 gap
+    if (endBoundary instanceof Date && !isNaN(endBoundary) && records.length) {
+      const lastRec = records[records.length - 1];
+      const diffEndMs = endBoundary - lastRec.Time;
+      if (diffEndMs > gapThresholdMs) {
+        const diffMinutes = diffEndMs / 60000;
+        lossGapFcnt.push([isValidNumber(lastRec.Fcnt)? lastRec.Fcnt : null, null]);
+        lossGapTime.push([lastRec.Time.toISOString(), endBoundary.toISOString()]);
         if (diffMinutes > maxGapMinutes) maxGapMinutes = diffMinutes;
       }
     }
