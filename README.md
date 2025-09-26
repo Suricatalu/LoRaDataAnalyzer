@@ -9,7 +9,7 @@ Key capabilities:
 - Rule-based classification mapped to normal/abnormal/exception.
 - FCnt Reset: any decrease in FCnt is treated as a reboot and a new segment is started.
 - Multi-level statistics: node overview, node daily, and global daily.
-- Duplicate and gap indicators (gap detection is optional).
+- Duplicate and gap indicators (gap detection is optional and treated as Advanced Analysis; NOT an Exception).
 - Day boundary by timezone and time-window filtering; quality statistics are uplink only.
 
 ## Project Structure
@@ -73,6 +73,25 @@ Optional: adjust timezone and time window; `meta.filterWindow.excluded` records 
 - Front-end analyzer spec: `doc/Analysis.md`
 - Original project: https://github.com/Suricatalu/LoRaDataAnalyzer
 - Project demo: https://suricatalu.github.io/LoRaDataAnalyzer
+
+## Advanced Analysis
+
+- No Data Gap is now categorized under "Advanced Analysis" and is not considered an Exception.
+- When enabled via UI, analytics will compute gap segments and metrics (e.g., `lossGapTime`, `maxGapMinutes`).
+- The chosen gap threshold value is exported in `analytics.meta.advanced.gapThresholdMinutes`.
+
+### Analytics Meta
+
+```
+analytics.meta = {
+    // ...existing fields
+    advanced?: {
+        gapThresholdMinutes: number
+    }
+}
+```
+
+If the gap threshold is not enabled, `meta.advanced` is omitted for backward compatibility.
 
 ## License and Contributions
 

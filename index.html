@@ -111,11 +111,14 @@
                         <input type="number" id="inactiveSinceMinutes" min="0" value="90" step="1" placeholder="e.g. 90" />
                     </div>
                     
-                    <!-- Max Gap >= N Minutes Filter (checkbox inside label, on left) -->
+                    <!-- Divider between Exception and Advanced Analysis -->
+                    <div class="settings-divider" aria-hidden="true"></div>
+
+                    <!-- Advanced Analysis Section -->
+                    <h3>Advanced Analysis</h3>
                     <div class="setting-row">
                         <label class="setting-label"><input type="checkbox" id="useNoDataDuration" class="include-flag" /> No Data Gap (minutes)
-                            <span class="ex-badge gap" title="No Data Gap">GAP</span>
-                            <span class="help-icon" data-tip="Find nodes that had no data for a continuous gap longer than this number of minutes when enabled.">?</span>
+                            <span class="help-icon" data-tip="Analyze nodes that had no data for a continuous gap longer than this number of minutes. (Advanced only, not classified as Exception)">?</span>
                         </label>
                         <input type="number" id="noDataDuration" min="0" value="90" step="1" placeholder="e.g. 90" />
                     </div>
@@ -243,8 +246,8 @@
                 <div class="node-charts-container">
                     <div class="chart-header">
                         <p class="chart-description">顯示選定節點的 RSSI 和 SNR 隨時間變化趨勢</p>
-                            <label style="font-size:12px; display:inline-flex; align-items:center; gap:4px; margin-top:6px;">
-                                <input type="checkbox" id="toggleGapOverlay" checked /> 顯示 <span class="ex-badge gap" title="No Data Gap">GAP</span> 區段
+                            <label id="toggleGapOverlayLabel" style="font-size:12px; display:inline-flex; align-items:center; gap:4px; margin-top:6px;">
+                                <input type="checkbox" id="toggleGapOverlay" checked /> 顯示 GAP 區段
                             </label>
                     </div>
                     <div class="node-chart-wrapper">

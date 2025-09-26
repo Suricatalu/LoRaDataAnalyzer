@@ -250,8 +250,8 @@ function buildClassificationConfig(options = {}) {
   const {
     threshold = 0, // 預設為 0，0 也是有效的 Loss Rate 篩選條件
     fcntFilter = { enabled: false },
-  gapThresholdMinutes = null,
-  inactiveSinceMinutes = null
+    gapThresholdMinutes = null, // Advanced 分析，不再作為 exception 規則
+    inactiveSinceMinutes = null
   } = options;
 
   const rules = [];
@@ -270,17 +270,7 @@ function buildClassificationConfig(options = {}) {
     });
   }
 
-  // Gap 規則 - 只有在啟用時才檢查
-  if (gapThresholdMinutes && gapThresholdMinutes > 0) {
-    rules.push({
-      metric: 'maxGapMinutes',
-      op: '>=',
-      value: gapThresholdMinutes,
-      category: 'exception',
-      note: `No data gap >= ${gapThresholdMinutes} minutes`,
-      priority: 1
-    });
-  }
+  // Gap 不再視為 exception 規則；僅提供 analytics 計算 gap 指標與 Advanced UI 顯示。
 
   // Inactive Since 規則 - 只有在啟用時才檢查
   if (inactiveSinceMinutes && inactiveSinceMinutes > 0) {
@@ -314,8 +304,8 @@ function buildClassificationConfig(options = {}) {
     filterOptions: {
       lossRateThreshold: threshold,
       fcntFilter,
-  gapThresholdMinutes,
-  inactiveSinceMinutes
+      inactiveSinceMinutes,
+      advanced: { gapThresholdMinutes }
     },
     hierarchical: true // 標記為階層式分類
   };
@@ -481,7 +471,8 @@ function classifyNode(node, classification) {
   const metrics = {
     lossRate: node.total?.lossRate,
     resetCount: node.total?.resetCount,
-    maxGapMinutes: node.total?.maxGapMinutes || -1, // Gap detection 結果（分鐘）
+    // maxGapMinutes 改為 Advanced 參考指標，不參與分類
+    maxGapMinutes: node.total?.maxGapMinutes || -1,
     avgRSSI: node.total?.avgRSSI,
     avgSNR: node.total?.avgSNR
   };
@@ -508,7 +499,7 @@ function classifyByRules(metrics, classification) {
   // 如果是階層式分類
   if (classification.hierarchical) {
     // 第一層：檢查 exception 規則（priority = 1）
-    const exceptionRules = rules.filter(rule => rule.priority === 1);
+  const exceptionRules = rules.filter(rule => rule.priority === 1);
     for (const rule of exceptionRules) {
       const value = metrics[rule.metric];
       
@@ -518,9 +509,7 @@ function classifyByRules(metrics, classification) {
       }
       
       // 對於 maxGapMinutes，-1 表示沒有 gap 數據或不適用
-      if (rule.metric === 'maxGapMinutes' && value === -1) {
-        continue;
-      }
+      if (rule.metric === 'maxGapMinutes') continue; // 已停用
       
       if (applyRule(value, rule)) {
         console.log(`[Classification] Node classified as 'exception' due to ${rule.metric}: ${value} ${rule.op} ${rule.value}`);
@@ -559,9 +548,7 @@ function classifyByRules(metrics, classification) {
     }
     
     // 對於 maxGapMinutes，-1 表示沒有 gap 數據或不適用
-    if (rule.metric === 'maxGapMinutes' && value === -1) {
-      continue;
-    }
+    if (rule.metric === 'maxGapMinutes') continue; // 已停用
     
     if (applyRule(value, rule)) {
       console.log(`[Classification] Node classified as '${rule.category}' due to ${rule.metric}: ${value} ${rule.op} ${rule.value}`);
@@ -773,6 +760,10 @@ function setupEventListeners() {
     updateGapTabVisibility();
     rebuildAnalytics();
     refreshOverlayIfOpen();
+    // 動態同步顯示/隱藏 GAP overlay 切換控制（若 Overlay 已開啟）
+    const lbl = document.getElementById('toggleGapOverlayLabel');
+    const enabled = document.getElementById('useNoDataDuration')?.checked;
+    if (lbl) lbl.style.display = enabled ? 'inline-flex' : 'none';
   });
   document.getElementById('noDataDuration')?.addEventListener('input', () => rebuildAnalytics());
   // Inactive Since 條件

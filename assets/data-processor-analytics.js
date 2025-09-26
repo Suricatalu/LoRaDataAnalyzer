@@ -429,6 +429,10 @@ function buildAnalytics(records, options = {}) {
 
   // 7. Meta
   const meta = buildMeta({ version, excludedCount, filterWindow: fw, timeRange, classification, dailyFill, timezone });
+  // Advanced Analysis metadata: 若啟用 gapThresholdMinutes，於 meta.advanced 顯式輸出
+  if (gapThresholdMinutes) {
+    meta.advanced = { gapThresholdMinutes };
+  }
 
   // 輸出當前使用的分類配置
   console.log('[Analytics] Current Classification Config:', classification);
@@ -515,6 +519,7 @@ function buildAnalytics(records, options = {}) {
  * @property {{enabled:boolean,mode:'no-data-100-loss',expectedBaseline:'per-node-daily-median'|'fixed',fixedExpected?:number,minExpected?:number}} [dailyFill]
  * @property {{start:string|null,end:string|null,inclusiveStart:boolean,inclusiveEnd:boolean,excluded:number}} filterWindow
  * @property {{start:string|null,end:string|null,days:number}} timeRange
+ * @property {{gapThresholdMinutes:number}} [advanced] // Advanced Analysis 設定（目前僅 GAP 閾值）
  */
 /** @typedef {{perNode:NodeStat[],global:GlobalStat,threshold:ThresholdView,meta:AnalyticsMeta}} AnalyticsContainer */
 

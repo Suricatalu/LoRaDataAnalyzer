@@ -284,8 +284,8 @@ function showNodeStatistics(nodeStats, selectedDate = null) {
     exceptionTags = (node.total && Array.isArray(node.total.exceptionTags)) ? node.total.exceptionTags : [];
     exceptionNoteMap = (node.total && node.total.exceptionNoteMap) ? node.total.exceptionNoteMap : {};
   }
-  const exCodeMap = { resetCount: 'RST', maxGapMinutes: 'GAP', inactiveSinceMinutes: 'INACT' };
-  const exColorMap = { resetCount: '#ff6b6b', maxGapMinutes: '#4dabf7', inactiveSinceMinutes: '#ffa94d' };
+  const exCodeMap = { resetCount: 'RST', inactiveSinceMinutes: 'INACT' }; // GAP 已移出 exception 類別
+  const exColorMap = { resetCount: '#ff6b6b', inactiveSinceMinutes: '#ffa94d' };
         const rowData = {
           Devname: devName,
           Devaddr: devAddr,
@@ -447,8 +447,8 @@ function showNodeStatistics(nodeStats, selectedDate = null) {
           exceptionTags = (node.total && Array.isArray(node.total.exceptionTags)) ? node.total.exceptionTags : [];
           exceptionNoteMap = (node.total && node.total.exceptionNoteMap) ? node.total.exceptionNoteMap : {};
         }
-        const exCodeMap = { resetCount: 'RST', maxGapMinutes: 'GAP', inactiveSinceMinutes: 'INACT' };
-        const exColorMap = { resetCount: '#ff6b6b', maxGapMinutes: '#4dabf7', inactiveSinceMinutes: '#ffa94d' };
+  const exCodeMap = { resetCount: 'RST', inactiveSinceMinutes: 'INACT' }; // GAP 已移出 exception 類別
+  const exColorMap = { resetCount: '#ff6b6b', inactiveSinceMinutes: '#ffa94d' };
         function exceptionBadgesHTML(tags, labels, noteMap) {
           if (!labels || !labels.length) return '';
           const items = labels.map((label, i) => ({
@@ -948,6 +948,16 @@ function populateNodeCharts(devname, devaddr) {
   try {
     window.nodeTimeSeriesChart = nodeTimeSeriesChart;
     window.getNodeTimeSeriesChart = () => nodeTimeSeriesChart;
+  } catch(e) {}
+
+  // 根據 useNoDataDuration 勾選狀態隱藏/顯示 GAP overlay 切換
+  try {
+    const gapFlag = document.getElementById('useNoDataDuration');
+    const gapToggleLabel = document.getElementById('toggleGapOverlayLabel');
+    if (gapToggleLabel) {
+      const enabled = !!(gapFlag && gapFlag.checked);
+      gapToggleLabel.style.display = enabled ? 'inline-flex' : 'none';
+    }
   } catch(e) {}
 
   // 若 analytics 可用，套用 GAP overlay & 渲染 GAP tab
@@ -1450,6 +1460,16 @@ function initializeTableRelated() {
               if (window.setGapOverlayEnabled) window.setGapOverlayEnabled(gapCbx.checked);
             });
           }
+
+          // 初始化顯示狀態：useNoDataDuration 未勾選時隱藏 GAP overlay 切換
+          try {
+            const gapFlag = document.getElementById('useNoDataDuration');
+            const gapToggleLabel = document.getElementById('toggleGapOverlayLabel');
+            if (gapToggleLabel) {
+              const enabled = !!(gapFlag && gapFlag.checked);
+              gapToggleLabel.style.display = enabled ? 'inline-flex' : 'none';
+            }
+          } catch(e) {}
       }
   });
 
@@ -1540,7 +1560,7 @@ function initializeTableRelated() {
  * 更新 Overlay 標題並在後方附加 Exception 小徽章
  * 依據：
  *  - 總體（overall）分析結果的 exceptionTags/exceptionLabels（非每日）
- *  - 僅在有勾選任一 Exception 選項（FCNT / GAP / INACT）時顯示
+ *  - 僅在有勾選任一 Exception 選項（FCNT / INACT）時顯示
  */
 function updateOverlayTitleBadges(devname, devaddr) {
   const titleEl = document.getElementById('overlayTitle');
@@ -1549,11 +1569,10 @@ function updateOverlayTitleBadges(devname, devaddr) {
   // 先設定標題文字
   titleEl.textContent = `Device: ${devname} (addr: ${devaddr})`;
 
-  // 僅在有勾選 Exception 選項時顯示徽章
+  // 僅在有勾選 Exception 選項時顯示徽章（GAP 已移出 Exception，不影響徽章顯示）
   const useFcnt = document.getElementById('useFcntIssue')?.checked;
-  const useGap = document.getElementById('useNoDataDuration')?.checked;
   const useInactive = document.getElementById('useInactiveSince')?.checked;
-  if (!useFcnt && !useGap && !useInactive) return;
+  if (!useFcnt && !useInactive) return;
 
   // 取得當前分析
   const analytics = (typeof window.getCurrentAnalytics === 'function') ? window.getCurrentAnalytics() : null;
@@ -1567,14 +1586,13 @@ function updateOverlayTitleBadges(devname, devaddr) {
   const noteMap = node.total.exceptionNoteMap || {};
   if (!tags.length) return;
 
-  // 僅顯示與目前勾選的 Exception 類別相符者
+  // 僅顯示與目前勾選的 Exception 類別相符者（不包含 GAP）
   const allow = new Set();
   if (useFcnt) allow.add('resetCount');
-  if (useGap) allow.add('maxGapMinutes');
   if (useInactive) allow.add('inactiveSinceMinutes');
 
-  const tagToClass = { resetCount: 'rst', maxGapMinutes: 'gap', inactiveSinceMinutes: 'inact' };
-  const tagToCode = { resetCount: 'RST', maxGapMinutes: 'GAP', inactiveSinceMinutes: 'INACT' };
+  const tagToClass = { resetCount: 'rst', inactiveSinceMinutes: 'inact' };
+  const tagToCode = { resetCount: 'RST', inactiveSinceMinutes: 'INACT' };
 
   // 建立徽章並附加在標題後方
   tags.forEach((tag, i) => {

@@ -122,7 +122,7 @@ interface AnalyticsContainer {
 
 * normal：未命中 higher-priority 規則（或所有規則）時的 `defaultCategory`。
 * abnormal：命中 lossRate 超過規則的類別（典型為 `lossRate > threshold`）。
-* exception：命中 FCnt Reset、No Data Gap、Inactive Since 等高優先級規則（由 rules 決定）。
+* exception：命中 FCnt Reset、Inactive Since 等高優先級規則（由 rules 決定；No Data Gap 已移至 Advanced Analysis）。
 
 說明：
 * 真正的分類邏輯集中在 `meta.classification.rules`。
@@ -134,6 +134,16 @@ interface AnalyticsContainer {
 
 ### 3.4 meta
 執行參數（版本、重置規則、是否包含下行、資料時間範圍、時區）。
+
+### 3.5 Advanced Analysis（新）
+此區為額外分析指標，不影響 exception 分類結果。
+
+目前包含：
+* No Data Gap：透過 `gapThresholdMinutes` 偵測相鄰上行紀錄（含分析視窗邊界與日界線）時間差是否 >= 閾值，輸出：
+  - `lossGapFcnt` / `lossGapTime`
+  - `maxGapMinutes`
+* 這些欄位僅作為診斷與視覺化用途，不再自動加入 classification.rules 的 exception 規則。
+* UI 上從「Exception」移至「Advanced Analysis」區塊，且不顯示原先 GAP 徽章。
 
 ----
 
@@ -313,7 +323,7 @@ export type ThresholdView = {
 
 // 4.7 規則式分類
 export type ClassificationRule = {
-  metric: string;                             // e.g. 'lossRate' | 'resetCount' | 'maxGapMinutes' | 'inactiveSinceMinutes'
+  metric: string;                             // e.g. 'lossRate' | 'resetCount' | 'inactiveSinceMinutes' | 'maxGapMinutes'(Advanced only)
   op: '>' | '>=' | '<' | '<=' | 'between' | 'outside';
   value?: number;                             // 適用於 > >= < <=
   min?: number;                               // 適用於 between/outside
@@ -438,9 +448,9 @@ export interface ProcessResult {
 | resetCount | 依時間排序後遇 `curr.Fcnt < prev.Fcnt` 次數 |
 | dataRatesUsed | Set(Datarate) 排序後輸出 |
 | nodes (global) | 有上行紀錄的節點數 |
-| lossGapFcnt | 相鄰兩筆（或邊界）時間差 > `gapThresholdMinutes` 的 FCnt 邊界配對：`Array<[prevFcnt|null,nextFcnt|null]>` |
-| lossGapTime | 同上時間 ISO 邊界：`Array<[prevTimeISO|null,nextTimeISO|null]>` |
-| maxGapMinutes | 該日或總體的最大 gap 分鐘數；無 gap => -1 |
+| lossGapFcnt | 相鄰兩筆（或邊界）時間差 > `gapThresholdMinutes` 的 FCnt 邊界配對：`Array<[prevFcnt|null,nextFcnt|null]>` （Advanced）|
+| lossGapTime | 同上時間 ISO 邊界：`Array<[prevTimeISO|null,nextTimeISO|null]>` （Advanced）|
+| maxGapMinutes | 該日或總體的最大 gap 分鐘數；無 gap => -1（Advanced 指標；不再觸發 exception） |
 | sentinel 值說明 | -1 代表「不可計算 / 資料不足」而非真實 0；前端應以特殊顯示(如 '--') |
 | noData | 布林；若為補齊日則 true |
 | expectedSource/baselineExpected | 僅補齊日出現 |
