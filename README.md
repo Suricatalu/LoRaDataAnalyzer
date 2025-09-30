@@ -1,11 +1,10 @@
 # LoRa Data Parser and WISE6610 Multi-Node Data Analyzer
 
-This project provides a front-end data analyzer that runs in the browser to parse CSV files and produce multi-node statistics and visualizations.
+This project provides a front-end data analyzer that runs in the browser to parse CSV files, downloaded from WISE-6610 V2, and produce multi-node statistics and visualizations.
 
-## Front-end Analyzer (Browser)
+## Key Capabilities
 
-Key capabilities:
-- New analytics container (perNode / global / threshold / meta).
+- Analyze data from multiple perspectives: across all nodes, per node.
 - Rule-based classification mapped to normal/abnormal/exception.
 - FCnt Reset: any decrease in FCnt is treated as a reboot and a new segment is started.
 - Multi-level statistics: node overview, node daily, and global daily.
@@ -58,7 +57,7 @@ WISE6610DataAnalyzer_Front/
 
 For the complete list of fields and specifications, see `doc/Analysis.md`.
 
-## Usage Flow (Front-end Analyzer)
+## Usage Flow
 
 1. Upload or paste a CSV file (with header row).
 2. Normalize: `data-processor-raw.js` produces `RawRecord[]`.
@@ -70,7 +69,7 @@ Optional: adjust timezone and time window; `meta.filterWindow.excluded` records 
 
 ## Docs and Links
 
-- Front-end analyzer spec: `doc/Analysis.md`
+- Analyzer spec: `doc/Analysis.md`
 - Original project: https://github.com/Suricatalu/LoRaDataAnalyzer
 - Project demo: https://suricatalu.github.io/LoRaDataAnalyzer
 
@@ -79,19 +78,6 @@ Optional: adjust timezone and time window; `meta.filterWindow.excluded` records 
 - No Data Gap is now categorized under "Advanced Analysis" and is not considered an Exception.
 - When enabled via UI, analytics will compute gap segments and metrics (e.g., `lossGapTime`, `maxGapMinutes`).
 - The chosen gap threshold value is exported in `analytics.meta.advanced.gapThresholdMinutes`.
-
-### Analytics Meta
-
-```
-analytics.meta = {
-    // ...existing fields
-    advanced?: {
-        gapThresholdMinutes: number
-    }
-}
-```
-
-If the gap threshold is not enabled, `meta.advanced` is omitted for backward compatibility.
 
 ## License and Contributions
 

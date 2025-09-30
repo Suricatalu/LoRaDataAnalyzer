@@ -51,7 +51,7 @@
                     <h3>Time Settings</h3>
                     <div class="setting-row">
                         <label class="setting-label">Start DateTime
-                            <span class="help-icon" data-tip="Only include records AFTER this date & time. Format: local timezone.">?</span>
+                            <span class="help-icon" data-tip="Only include records AFTER this date & time.">?</span>
                         </label>
                         <input type="datetime-local" id="startDate" />
                     </div>
@@ -59,14 +59,14 @@
                     <!-- End DateTime -->
                     <div class="setting-row">
                         <label class="setting-label">End DateTime
-                            <span class="help-icon" data-tip="Only include records BEFORE this date & time. Format: local timezone.">?</span>
+                            <span class="help-icon" data-tip="Only include records BEFORE this date & time.">?</span>
                         </label>
                         <input type="datetime-local" id="endDate" />
                     </div>
                     <!-- Timezone Selector -->
                     <div class="setting-row">
                         <label class="setting-label">Timezone
-                            <span class="help-icon" data-tip="Select the display / interpretation timezone for time range filtering & UI display. Defaults to your browser detected timezone. This selection will NOT change automatically after CSV upload.">?</span>
+                            <span class="help-icon" data-tip="Used to parse and analyze the data via the timezone. Defaults to your browser detected timezone. Manually change when the user is from a different timezone. This selection will NOT change automatically after CSV upload.">?</span>
                         </label>
                         <div class="tz-select-wrapper" id="timezoneCustomWrapper">
                             <button type="button" id="timezoneSelectButton" class="tz-select-btn" aria-haspopup="listbox" aria-expanded="false">Loading...</button>
@@ -84,7 +84,7 @@
                     <h3>Basic Factor (Normal/Abnormal)</h3>
                     <div class="setting-row">
                         <label for="threshold" class="setting-label">Loss Rate Threshold (%)
-                            <span class="help-icon" data-tip="Highlight / analyze nodes whose packet loss rate exceeds or equals this threshold. Set 0 to disable highlighting.">?</span>
+                            <span class="help-icon" data-tip="Highlight / analyze nodes whose packet loss rate exceeds or equals this threshold">?</span>
                         </label>
                         <input type="number" id="threshold" value="0" min="0" max="100" step="5" />
                     </div>
@@ -97,7 +97,7 @@
                     <div class="setting-row">
                         <label class="setting-label"><input type="checkbox" id="useFcntIssue" class="include-flag" /> FCNT Drop / Reset Issue
                             <span class="ex-badge rst" title="FCNT Reset / Drop">RST</span>
-                            <span class="help-icon" data-tip="Enable to only include nodes that had frame counter drop or reset events.">?</span>
+                            <span class="help-icon" data-tip="Enable to only include nodes that had frame counter drop or reset events, which usually represent a restart behavior of node.">?</span>
                         </label>
                         <input type="number" id="fcntrIssueThreshold" min="0" value="1" step="1" placeholder="e.g. 1" />
                     </div>
@@ -106,7 +106,7 @@
                     <div class="setting-row">
                         <label class="setting-label"><input type="checkbox" id="useInactiveSince" class="include-flag" /> Inactive Since (minutes)
                             <span class="ex-badge inact" title="Inactive Since">INACT</span>
-                            <span class="help-icon" data-tip="Mark nodes whose last upload till the overall last timestamp exceeds this number of minutes when enabled.">?</span>
+                            <span class="help-icon" data-tip="Mark nodes whose last upload till the overall last timestamp exceeds this number of minutes when enabled , which represents a period of inactivity of node.">?</span>
                         </label>
                         <input type="number" id="inactiveSinceMinutes" min="0" value="90" step="1" placeholder="e.g. 90" />
                     </div>
