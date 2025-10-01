@@ -165,7 +165,7 @@ function destroyCurrentTable() {
  * @param {string|null} selectedDate - Optional date in YYYY-MM-DD format to show daily stats, null for total stats
  */
 function showNodeStatistics(nodeStats, selectedDate = null) {
-  console.log('[Table] showNodeStatistics count=', nodeStats?.length || 0, 'selectedDate=', selectedDate);
+  // console.log('[Table] showNodeStatistics count=', nodeStats?.length || 0, 'selectedDate=', selectedDate);
   
   const table = document.querySelector('#detailTable');
   if (!table) {
@@ -362,7 +362,7 @@ function showNodeStatistics(nodeStats, selectedDate = null) {
       currentTableType = 'nodeStats';
     }, 100);
   } else {
-    console.log('[Table] showNodeStatistics updating existing table', nodeStats);
+    // console.log('[Table] showNodeStatistics updating existing table', nodeStats);
     // Just update the data without rebuilding
     if (!nodeStats || nodeStats.length === 0) {
       currentDataTable.clear().draw();
@@ -562,11 +562,11 @@ function applyTimeRangeFilter(records, timeFilter) {
     return records; // No time filter applied
   }
   
-  console.log('[TimeFilter] Applying time filter:', {
-    start: timeFilter.start?.toLocaleString(),
-    end: timeFilter.end?.toLocaleString(),
-    inputRecords: records.length
-  });
+  // console.log('[TimeFilter] Applying time filter:', {
+  //   start: timeFilter.start?.toLocaleString(),
+  //   end: timeFilter.end?.toLocaleString(),
+  //   inputRecords: records.length
+  // });
   
   // Define getField helper for this scope
   function getField(obj, ...keys) {
@@ -612,7 +612,6 @@ function applyTimeRangeFilter(records, timeFilter) {
   });
   
   const filteredCount = filteredRecords.length;
-  console.log(`[TimeFilter] After filtering: ${filteredCount} records (${records.length - filteredCount} filtered out)`);
   
   return filteredRecords;
 }
@@ -640,7 +639,6 @@ function populateNodeCharts(devname, devaddr) {
 
   // Get time range filter from UI
   const timeFilter = getTimeRangeFilter();
-  console.log('[Chart] Time filter applied:', timeFilter);
 
   // Normalize lookup values for comparison (trim + lower)
   const devnameKey = (devname || '').toString().trim().toLowerCase();
@@ -680,8 +678,6 @@ function populateNodeCharts(devname, devaddr) {
     const dateB = timeB instanceof Date ? timeB : new Date(timeB);
     return dateA - dateB;
   });
-
-  console.log(`[Chart] Filtered ${filteredRecords.length} total records for ${devname}`);
 
   // Prepare chart data
   const chartData = [];
@@ -746,12 +742,6 @@ function populateNodeCharts(devname, devaddr) {
     }
   });
 
-  console.log(`[Chart] Processed ${uplinkCount} uplink and ${downlinkCount} downlink records`);
-  console.log(`[Chart] Prepared ${chartData.length} chart data points from uplink records`);
-  if (chartData.length > 0) {
-    console.log('[Chart] Sample data point:', chartData[0]);
-  }
-
   // Destroy existing chart if it exists
   if (nodeTimeSeriesChart) {
     nodeTimeSeriesChart.destroy();
@@ -774,8 +764,6 @@ function populateNodeCharts(devname, devaddr) {
 
   const rssiData = chartData.map(d => ({ x: d.timestamp, y: d.rssi, data: d })).filter(d => d.y !== null);
   const snrData = chartData.map(d => ({ x: d.timestamp, y: d.snr, data: d })).filter(d => d.y !== null);
-
-  console.log(`[Chart] RSSI data points: ${rssiData.length}, SNR data points: ${snrData.length}`);
 
   // Check if we have any data to display
   if (rssiData.length === 0 && snrData.length === 0) {
@@ -942,8 +930,6 @@ function populateNodeCharts(devname, devaddr) {
     }
   });
 
-  console.log(`[Chart] Created time series chart for ${devname} with ${chartData.length} data points`);
-
   // 將圖表實例暴露到全域，供 GAP overlay 使用
   try {
     window.nodeTimeSeriesChart = nodeTimeSeriesChart;
@@ -1001,7 +987,6 @@ function populateNodeDataTable(devname, devaddr) {
 
   // Get time range filter from UI
   const timeFilter = getTimeRangeFilter();
-  console.log('[Table] Time filter applied to node data:', timeFilter);
 
   // Normalize lookup values for comparison (trim + lower)
   const devnameKey = (devname || '').toString().trim().toLowerCase();
@@ -1212,8 +1197,6 @@ function populateNodeDataTable(devname, devaddr) {
 
 // Populate Basic Info tab with node statistics
 function populateBasicInfo(devname, devaddr) {
-  console.log('[BasicInfo] Populating basic info for:', devname, devaddr);
-  
   // Set device info
   document.getElementById('basicDevname').textContent = devname || '-';
   document.getElementById('basicDevaddr').textContent = devaddr || '-';
@@ -1452,6 +1435,46 @@ function initializeTableRelated() {
       if (window.createNodeGwBarChart) {
         window.createNodeGwBarChart(devname, devaddr);
           }
+          // Initialize Parsed Payload chart (if tab exists)
+          if (window.createNodeParsedChart) {
+            try { window.createNodeParsedChart(devname, devaddr); } catch(e) { console.warn('[Overlay] Parsed chart init failed', e); }
+          }
+          // Bind parser controls change events (once)
+          const typeSel = document.getElementById('payloadParserType');
+          const pathInput = document.getElementById('payloadParserJsonPath');
+          const pathInput2 = document.getElementById('payloadParserJsonPath2');
+          const pathInput3 = document.getElementById('payloadParserJsonPath3');
+          const getCurrentOverlayNode = () => {
+            const titleText = document.getElementById('overlayTitle')?.textContent || '';
+            const m = titleText.match(/Device:\s*(.+?)\s*\(addr:\s*(.+?)\)/);
+            return m ? { devname: m[1].trim(), devaddr: m[2].trim() } : { devname, devaddr };
+          };
+          if (typeSel && !typeSel._boundParsed) {
+            typeSel._boundParsed = true;
+            typeSel.addEventListener('change', () => { 
+              const n = getCurrentOverlayNode();
+              window.updateNodeParsedChart && window.updateNodeParsedChart(n.devname, n.devaddr);
+            });
+          }
+          if (pathInput && !pathInput._boundParsed) {
+            pathInput._boundParsed = true;
+            // 即時更新與 Enter 執行
+            pathInput.addEventListener('input', () => { 
+              const n = getCurrentOverlayNode();
+              window.updateNodeParsedChart && window.updateNodeParsedChart(n.devname, n.devaddr);
+            });
+            pathInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); const n = getCurrentOverlayNode(); window.updateNodeParsedChart && window.updateNodeParsedChart(n.devname, n.devaddr); }});
+          }
+          if (pathInput2 && !pathInput2._boundParsed) {
+            pathInput2._boundParsed = true;
+            pathInput2.addEventListener('input', () => { const n = getCurrentOverlayNode(); window.updateNodeParsedChart && window.updateNodeParsedChart(n.devname, n.devaddr); });
+            pathInput2.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); const n = getCurrentOverlayNode(); window.updateNodeParsedChart && window.updateNodeParsedChart(n.devname, n.devaddr); }});
+          }
+          if (pathInput3 && !pathInput3._boundParsed) {
+            pathInput3._boundParsed = true;
+            pathInput3.addEventListener('input', () => { const n = getCurrentOverlayNode(); window.updateNodeParsedChart && window.updateNodeParsedChart(n.devname, n.devaddr); });
+            pathInput3.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); const n = getCurrentOverlayNode(); window.updateNodeParsedChart && window.updateNodeParsedChart(n.devname, n.devaddr); }});
+          }
           // 初始化 GAP overlay checkbox 事件（僅綁一次）
           const gapCbx = document.getElementById('toggleGapOverlay');
           if (gapCbx && !gapCbx._gapBound) {
@@ -1487,6 +1510,9 @@ function initializeTableRelated() {
           }
           if (window.destroyNodeGwBarChart) {
             window.destroyNodeGwBarChart();
+          }
+          if (window.destroyNodeParsedChart) {
+            window.destroyNodeParsedChart();
           }
       }
   });
@@ -1549,6 +1575,19 @@ function initializeTableRelated() {
         setTimeout(() => {
           if (window.resizeNodeGwBarChart) {
             window.resizeNodeGwBarChart();
+          }
+        }, 150);
+      }
+
+      // 如果切換到 Parser tab，調整解析圖並嘗試更新（確保在首次切到時也會出圖）
+      if (button.dataset.tab === 'nodeParsedChart') {
+        setTimeout(() => {
+          if (window.resizeNodeParsedChart) window.resizeNodeParsedChart();
+          // 嘗試從標題解析目前節點
+          const titleText = document.getElementById('overlayTitle')?.textContent || '';
+          const m = titleText.match(/Device:\s*(.+?)\s*\(addr:\s*(.+?)\)/);
+          if (m && window.updateNodeParsedChart) {
+            window.updateNodeParsedChart(m[1].trim(), m[2].trim());
           }
         }, 150);
       }

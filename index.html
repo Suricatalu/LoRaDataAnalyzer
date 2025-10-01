@@ -13,6 +13,10 @@
     <!-- Modular JavaScript files -->
     <script src="assets/data-processor-analytics.js"></script>
     <script src="assets/data-processor-raw.js"></script>
+    <!-- LoRa payload parsers -->
+    <script src="assets/wise-parser-api.js"></script>
+    <script src="assets/eva-parser-api.js"></script>
+    <script src="assets/lora-data-parser.js"></script>
     <script src="assets/chart-manager.js"></script>
     <script src="assets/table-manager.js"></script>
     <script src="assets/app-controller.js"></script>
@@ -172,8 +176,44 @@
                 <button class="tab-button" data-tab="nodeSignalChart">RSSI & SNR Chart</button>
                 <button class="tab-button" data-tab="nodeUpFreqChart">Uplink Freq Chart</button>
                 <button class="tab-button" data-tab="nodeGwChart">GW Chart</button>
+                <button class="tab-button" data-tab="nodeParsedChart">Payload Parser</button>
                 <button class="tab-button" data-tab="nodeData">Node 資料</button>
                 <button class="tab-button" data-tab="nodeGapChart">Gaps</button>
+            </div>
+            <div class="tab-content hidden" id="nodeParsedChart">
+                <!-- Node Parsed Data Chart Content -->
+                <div class="node-charts-container">
+                    <div class="chart-header">
+                        <p class="chart-description">解析選定節點每筆資料的 Payload 並繪製時間序列圖（x=時間，y=解析值）</p>
+                        <div class="parser-controls" style="display:flex; gap:12px; align-items:center; flex-wrap:wrap; margin:6px 0 2px 0;">
+                            <label style="font-size:12px; color:#ddd; display:flex; align-items:center; gap:6px;">
+                                Parser:
+                                <select id="payloadParserType" style="padding:4px 8px; background:#1e1e1e; color:#fff; border:1px solid #444; border-radius:4px;">
+                                    <option value="">None</option>
+                                    <option value="wise">WISE</option>
+                                    <option value="eva">EVA</option>
+                                </select>
+                            </label>
+                            <label style="font-size:12px; color:#ddd; display:flex; align-items:center; gap:6px; min-width:360px; flex:1;">
+                                JSON 路徑:
+                                <input id="payloadParserJsonPath" type="text" placeholder="例如：temperature 或 message.Temp 或 data.temperatureC" style="flex:1; padding:6px 10px; background:#1e1e1e; color:#fff; border:1px solid #444; border-radius:4px;" />
+                            </label>
+                            <label style="font-size:12px; color:#ddd; display:flex; align-items:center; gap:6px; min-width:300px; flex:1;">
+                                JSON 路徑2:
+                                <input id="payloadParserJsonPath2" type="text" placeholder="可選：第二條路徑" style="flex:1; padding:6px 10px; background:#1e1e1e; color:#fff; border:1px solid #444; border-radius:4px;" />
+                            </label>
+                            <label style="font-size:12px; color:#ddd; display:flex; align-items:center; gap:6px; min-width:300px; flex:1;">
+                                JSON 路徑3:
+                                <input id="payloadParserJsonPath3" type="text" placeholder="可選：第三條路徑" style="flex:1; padding:6px 10px; background:#1e1e1e; color:#fff; border:1px solid #444; border-radius:4px;" />
+                            </label>
+                            <span id="payloadParserStatus" style="font-size:12px; color:#aaa;"></span>
+                        </div>
+                        <div id="payloadParserError" style="font-size:12px; color:#ff8a8a; margin-top:4px; display:none;"></div>
+                    </div>
+                    <div class="node-chart-wrapper">
+                        <canvas id="nodeParsedDataChart"></canvas>
+                    </div>
+                </div>
             </div>
             <div class="tab-content" id="basicInfo">
                 <!-- Basic Info Content -->

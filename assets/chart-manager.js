@@ -7,6 +7,7 @@ let nodeGapTimelineChart; // GAP 時間軸圖
 let nodeDailyGapBarChart; // 每日最大 GAP 圖
 let gapOverlayEnabled = true; // RSSI/SNR 圖表疊層開關
 let gapOverlayMeta = { segments: [] }; // 儲存目前節點 GAP 區段 (timestamp pair)
+let nodeParsedDataChart; // 解析後 payload 數據圖表實例
 
 // 統一 GAP 分鐘顯示格式：整數不帶小數，否則顯示到小數第 2 位
 function formatGapMinutes(val) {
@@ -403,7 +404,7 @@ function renderBarChart(analytics) {
     destroyChart();
     return;
   }
-  console.log('[Chart] Rendering bar chart', analytics);
+  
   const list = analytics.threshold.list.slice().sort((a,b)=> a.date.localeCompare(b.date));
   const labels = list.map(d => d.date);
   const normal = list.map(d => d.normalcnt);
@@ -528,8 +529,6 @@ function destroyChart() {
  * @param {string} devaddr - Device address
  */
 function createNodeUpFreqChart(devname, devaddr) {
-  console.log('[Chart] Creating frequency chart for', devname, devaddr);
-  
   // 取得目前的 analytics 資料
   if (!window.getCurrentAnalytics) {
     console.warn('[Chart] No getCurrentAnalytics function available');
@@ -720,7 +719,6 @@ function createNodeUpFreqChart(devname, devaddr) {
     }
   });
   
-  console.log(`[Chart] Created frequency chart with ${globalFrequencies.length} frequency bands (showing all global frequencies)`);
 }
 
 /**
@@ -890,8 +888,6 @@ function resizeChart() {
  * @param {string} devaddr - Device address
  */
 function createNodeGwBarChart(devname, devaddr) {
-  console.log('[Chart] Creating gateway gateway bar chart for', devname, devaddr);
-  
   // 優先使用 analytics 數據結構
   if (window.getCurrentAnalytics) {
     const analytics = window.getCurrentAnalytics();
@@ -909,8 +905,6 @@ function createNodeGwBarChart(devname, devaddr) {
       });
       
       if (nodeStats && nodeStats.total && nodeStats.total.gatewayCounts) {
-        console.log('[Chart] Using analytics gateway data for', devname);
-        
         // 從 analytics 數據中獲取 gateway 統計
         const gatewayCounts = nodeStats.total.gatewayCounts;
         const gatewayCount = new Map();
@@ -921,8 +915,6 @@ function createNodeGwBarChart(devname, devaddr) {
             gatewayCount.set(gateway, count);
           }
         }
-        
-        console.log('[Chart] Gateway count map from analytics:', gatewayCount);
         
         if (gatewayCount.size === 0) {
           showGwBarChartEmptyState();
@@ -1019,8 +1011,6 @@ function createNodeGwBarChart(devname, devaddr) {
       }
     });
   });
-  
-  console.log('[Chart] Gateway count map from raw records:', gatewayCount);
   
   if (gatewayCount.size === 0) {
   showGwBarChartEmptyState();
@@ -1164,8 +1154,6 @@ function createGatewayBarChartFromData(devname, devaddr, gatewayCount, totalWith
 
   // 儲存期望值供 plugin 取用
   nodeGwBarChart.$expectedTotal = expectedTotal;
-
-  console.log(`[Chart] Created gateway bar chart with ${gatewayCount.size} gateways`);
 }
 
 /**
@@ -1210,8 +1198,6 @@ function updateNodeGwBarChart(devname, devaddr) {
       });
       
       if (nodeStats && nodeStats.total && nodeStats.total.gatewayCounts) {
-        console.log('[Chart] Using analytics gateway data for update', devname);
-        
         // 從 analytics 數據中獲取 gateway 統計
         const gatewayCounts = nodeStats.total.gatewayCounts;
         const gatewayCount = new Map();
@@ -1222,8 +1208,6 @@ function updateNodeGwBarChart(devname, devaddr) {
             gatewayCount.set(gateway, count);
           }
         }
-        
-        console.log('[Chart] Gateway count map from analytics (update):', gatewayCount);
         
         if (gatewayCount.size === 0) {
           // 如果沒有接收器資料，清空圖表
@@ -1328,8 +1312,6 @@ function updateNodeGwBarChart(devname, devaddr) {
       }
     });
   });
-  
-  console.log('[Chart] Gateway count map from raw records (update):', gatewayCount);
   
   if (gatewayCount.size === 0) {
     // 如果沒有接收器資料，清空圖表
@@ -1453,6 +1435,9 @@ window.addEventListener('resize', () => {
   if (nodeGwBarChart) {
     setTimeout(resizeNodeGwBarChart, 100);
   }
+  if (typeof window.resizeNodeParsedChart === 'function') {
+    setTimeout(window.resizeNodeParsedChart, 100);
+  }
 });
 
 // Initialize chart manager when DOM is loaded
@@ -1485,4 +1470,276 @@ if (typeof window !== 'undefined') {
   window.renderNodeGapCharts = renderNodeGapCharts;
   window.applyGapOverlayToTimeSeriesChart = applyGapOverlayToTimeSeriesChart;
   window.setGapOverlayEnabled = setGapOverlayEnabled;
+}
+
+// ============================
+// Payload Parser 時序圖 (x: 時間, y: 解析值)
+// ============================
+
+/**
+ * 解析某節點的 RawRecords，使用 LoRaDataParser 與 JSON 路徑取值，並建立折線圖
+ * @param {string} devname
+ * @param {string} devaddr
+ */
+function createNodeParsedChart(devname, devaddr) {
+  const container = document.getElementById('nodeParsedChart');
+  const canvas = document.getElementById('nodeParsedDataChart');
+  const statusEl = document.getElementById('payloadParserStatus');
+  const errEl = document.getElementById('payloadParserError');
+  if (!container) return;
+  // 若畫布被替換為空態，復原
+  if (!canvas) {
+    const wrapper = container.querySelector('.node-chart-wrapper');
+    if (wrapper) wrapper.innerHTML = '<canvas id="nodeParsedDataChart"></canvas>';
+  }
+  const canvasEl = document.getElementById('nodeParsedDataChart');
+  if (!canvasEl) return;
+
+  // 銷毀舊圖
+  if (nodeParsedDataChart) { nodeParsedDataChart.destroy(); nodeParsedDataChart = null; }
+
+  // 取得與 RSSI/SNR 相同邏輯的時間範圍，做為 x 軸 min/max
+  const timeFilter = (typeof window.getTimeRangeFilter === 'function') ? (window.getTimeRangeFilter() || {}) : {};
+
+  const typeSel = document.getElementById('payloadParserType');
+  const pathInput = document.getElementById('payloadParserJsonPath');
+  const pathInput2 = document.getElementById('payloadParserJsonPath2');
+  const pathInput3 = document.getElementById('payloadParserJsonPath3');
+  const parserType = (typeSel?.value || '').trim().toLowerCase();
+  const jsonPaths = [pathInput, pathInput2, pathInput3]
+    .map(el => (el && el.value ? el.value.trim() : ''))
+    .filter(p => p);
+  if (errEl) { errEl.style.display = 'none'; errEl.textContent = ''; }
+
+  // 未選擇 parser 類型時顯示提示
+  if (!parserType) {
+    const wrapper = canvasEl.parentElement;
+    if (wrapper) wrapper.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:360px;color:#aaa;font-style:italic;">請選擇 Parser 類型並輸入 JSON 路徑</div>';
+    return;
+  }
+
+  // 確保是 canvas 狀態
+  if (!canvasEl.parentElement.querySelector('canvas')) {
+    canvasEl.parentElement.innerHTML = '<canvas id="nodeParsedDataChart"></canvas>';
+  }
+  const ctx = document.getElementById('nodeParsedDataChart').getContext('2d');
+
+  try {
+    // 至少需要一條路徑
+    if (!jsonPaths.length) {
+      const wrapper = ctx.canvas.parentElement;
+      if (wrapper) wrapper.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:360px;color:#aaa;font-style:italic;">請至少輸入 1 條 JSON 路徑</div>';
+      return;
+    }
+
+    const seriesList = jsonPaths.map(p => ({ path: p, points: collectParsedSeriesForNode(devname, devaddr, parserType, p) }));
+    if (statusEl) statusEl.textContent = `系列: ${seriesList.length}，點數: ${seriesList.map(s=>s.points.length).join(' / ')}`;
+    const anyPoints = seriesList.some(s => s.points.length);
+    if (!anyPoints) {
+      const wrapper = ctx.canvas.parentElement;
+      if (wrapper) wrapper.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:360px;color:#aaa;font-style:italic;">沒有符合條件的解析數據</div>';
+      return;
+    }
+    // 調色盤（可擴充）
+    const colors = [
+      { b: 'rgba(255,206,86,1)', f: 'rgba(255,206,86,0.2)' }, // 黃
+      { b: 'rgba(54,162,235,1)', f: 'rgba(54,162,235,0.2)' }, // 藍
+      { b: 'rgba(255,99,132,1)', f: 'rgba(255,99,132,0.2)' }, // 紅
+      { b: 'rgba(75,192,192,1)', f: 'rgba(75,192,192,0.2)' }, // 綠
+      { b: 'rgba(153,102,255,1)', f: 'rgba(153,102,255,0.2)' }, // 紫
+    ];
+
+    nodeParsedDataChart = new Chart(ctx, {
+      type: 'line',
+      data: {
+        datasets: seriesList.map((s, idx) => ({
+          label: s.path,
+          data: s.points.map(p => ({ x: p.ts, y: p.value, _p: p })),
+          borderColor: colors[idx % colors.length].b,
+          backgroundColor: colors[idx % colors.length].f,
+          borderWidth: 2,
+          pointRadius: 3,
+          pointHoverRadius: 5,
+          tension: 0.1
+        }))
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        parsing: false,
+        interaction: { mode: 'nearest', intersect: false },
+        plugins: {
+          legend: { labels: { color: '#fff' } },
+          title: { display: true, text: `${devname} - Parsed Payload`, color: '#fff', font: { size: 16 } },
+          tooltip: {
+            backgroundColor: 'rgba(0,0,0,0.85)',
+            titleColor: '#fff', bodyColor: '#fff', borderColor: 'rgba(255,255,255,0.25)', borderWidth: 1,
+            callbacks: {
+              title: (items) => items?.[0] ? new Date(items[0].parsed.x).toLocaleString('zh-TW') : '',
+              label: (ctx) => {
+                const p = ctx.raw?._p || {};
+                const lines = [];
+                lines.push(`${ctx.dataset.label} = ${ctx.parsed.y}`);
+                if (p.fcnt != null) lines.push(`FCNT: ${p.fcnt}`);
+                if (p.timeStr) lines.push(`時間: ${p.timeStr}`);
+                if (p.port != null) lines.push(`Port: ${p.port}`);
+                return lines;
+              }
+            }
+          }
+        },
+        scales: {
+          x: {
+            type: 'linear',
+            position: 'bottom',
+            min: timeFilter.start ? timeFilter.start.getTime() : undefined,
+            max: timeFilter.end ? timeFilter.end.getTime() : undefined,
+            title: { display: true, text: '時間', color: '#fff' },
+            ticks: {
+              color: '#fff',
+              maxTicksLimit: 8,
+              callback: function(value) {
+                const d = new Date(value);
+                if (isNaN(d.getTime())) return '';
+                return d.toLocaleString('zh-TW', {
+                  month: '2-digit',
+                  day: '2-digit',
+                  hour: '2-digit',
+                  minute: '2-digit'
+                });
+              }
+            },
+            grid: { color: 'rgba(255,255,255,0.1)' }
+          },
+          y: {
+            type: 'linear',
+            ticks: { color: '#fff' },
+            grid: { color: 'rgba(255,255,255,0.1)' }
+          }
+        }
+      }
+    });
+  } catch (e) {
+    if (errEl) { errEl.textContent = e.message || String(e); errEl.style.display = 'block'; }
+    console.error('[ParsedChart] create failed', e);
+  }
+}
+
+/** 更新解析圖 (重新取得 UI 條件) */
+function updateNodeParsedChart(devname, devaddr) {
+  createNodeParsedChart(devname, devaddr);
+}
+
+/** 銷毀解析圖 */
+function destroyNodeParsedChart() {
+  if (nodeParsedDataChart) { nodeParsedDataChart.destroy(); nodeParsedDataChart = null; }
+}
+
+/** 調整解析圖大小 */
+function resizeNodeParsedChart() {
+  if (nodeParsedDataChart) nodeParsedDataChart.resize();
+}
+
+// 內部：收集某節點的解析序列
+function collectParsedSeriesForNode(devname, devaddr, parserType, jsonPath) {
+  const recs = (typeof window.getRawRecords === 'function') ? window.getRawRecords() : [];
+  if (!Array.isArray(recs) || !recs.length) return [];
+  // 時間篩選
+  const timeFilter = (typeof window.getTimeRangeFilter === 'function') ? window.getTimeRangeFilter() : {};
+  // 快速多鍵存取
+  const getField = (obj, ...keys) => {
+    if (!obj) return undefined;
+    for (const k of keys) if (k in obj && obj[k] != null) return obj[k];
+    const lower = Object.keys(obj).reduce((m, k) => (m[k.toLowerCase()] = obj[k], m), {});
+    for (const k of keys) { const v = lower[k.toLowerCase()]; if (v != null) return v; }
+    return undefined;
+  };
+  const devnameKey = (devname||'').trim().toLowerCase();
+  const devaddrKey = (devaddr||'').trim().toLowerCase();
+  let filtered = recs.filter(r => {
+    const rn = (getField(r,'Devname','DevName','Device Name')||'').toString().trim().toLowerCase();
+    const ra = (getField(r,'Devaddr','DevAddr')||'').toString().trim().toLowerCase();
+    return rn === devnameKey || ra === devaddrKey || rn === devaddrKey || ra === devnameKey;
+  });
+  // 時間過濾
+  if (timeFilter && (timeFilter.start || timeFilter.end)) {
+    filtered = filtered.filter(r => {
+      const t = getField(r,'Time','Received');
+      const d = (t instanceof Date) ? t : new Date(t);
+      if (isNaN(d)) return false;
+      if (timeFilter.start && d < timeFilter.start) return false;
+      if (timeFilter.end && d > timeFilter.end) return false;
+      return true;
+    });
+  }
+  // 僅上行
+  filtered = filtered.filter(r => {
+    const type = getField(r,'Type','FrameType','Frame Type');
+    return type && (type.toString().toLowerCase().includes('up') || (typeof type === 'object' && type.isUp));
+  });
+
+  // 解析器
+  let ParserCtor = null;
+  if (typeof window !== 'undefined' && window.LoRaDataParser) {
+    ParserCtor = window.LoRaDataParser;
+  } else if (typeof require !== 'undefined') {
+    try { ParserCtor = require('./lora-data-parser.js'); } catch (e) { /* ignore */ }
+  }
+  if (!ParserCtor) throw new Error('LoRaDataParser 未載入');
+  const parser = new ParserCtor();
+  const fportGetter = r => getField(r,'Port');
+
+  // 路徑取值工具（支援 dot 路徑）
+  const pickByPath = (obj, path) => {
+    if (!path) return undefined;
+    const segs = path.split('.').map(s=>s.trim()).filter(Boolean);
+    let cur = obj;
+    for (const s of segs) {
+      if (cur && Object.prototype.hasOwnProperty.call(cur, s)) cur = cur[s];
+      else if (cur && typeof cur === 'object' && s in cur) cur = cur[s];
+      else return undefined;
+    }
+    return cur;
+  };
+
+  const points = [];
+  for (const r of filtered) {
+    const hex = getField(r,'Data','Payload','Hex');
+    if (!hex || typeof hex !== 'string') continue;
+    let parsed = null;
+    try {
+      if (parserType === 'wise') {
+        parsed = parser.parseWise(hex, { macAddress: getField(r,'DevEUI','Mac','MAC'), enableStorage:false });
+      } else if (parserType === 'eva') {
+        const fp = fportGetter(r);
+        if (fp == null || fp === '') continue; // EVA 需要 fport
+        parsed = parser.parseEva(hex, Number(fp));
+      } else {
+        parsed = parser.autoDetectAndParse(hex, { fport: fportGetter(r) });
+      }
+    } catch(e) {
+      // 單筆解析失敗忽略
+      continue;
+    }
+    if (!parsed || !parsed.success) continue;
+    const source = parsed.data || parsed.message || {};
+    const value = jsonPath ? pickByPath(source, jsonPath) : undefined;
+    const num = Number(value);
+    if (value === undefined || !isFinite(num)) continue; // 僅繪出可數值化的值
+    const rawTime = getField(r,'Time','Received');
+    const d = (rawTime instanceof Date)? rawTime : new Date(rawTime);
+    if (isNaN(d)) continue;
+    points.push({ ts: d.getTime(), value: num, fcnt: getField(r,'Fcnt','FCnt'), timeStr: d.toLocaleString('zh-TW'), port: getField(r,'Port') });
+  }
+  // 依時間排序
+  points.sort((a,b)=>a.ts-b.ts);
+  return points;
+}
+
+// 對外暴露
+if (typeof window !== 'undefined') {
+  window.createNodeParsedChart = createNodeParsedChart;
+  window.updateNodeParsedChart = updateNodeParsedChart;
+  window.destroyNodeParsedChart = destroyNodeParsedChart;
+  window.resizeNodeParsedChart = resizeNodeParsedChart;
 }

@@ -310,7 +310,7 @@ function buildClassificationConfig(options = {}) {
     hierarchical: true // 標記為階層式分類
   };
 
-  console.log('[Classification] Built hierarchical classification config:', config);
+  // console.log('[Classification] Built hierarchical classification config:', config);
   
   return config;
 }
@@ -704,16 +704,16 @@ function collectFilterOptions() {
     { enabled: true, threshold: fcntIssueThreshold } : { enabled: false };
   
   // Debug: 輸出收集到的篩選選項
-  console.log('[App] Collected filter options:', {
-    gapEnabled,
-    gapMinutes,
-    gapThresholdMinutes,
-    inactiveEnabled,
-    inactiveSinceMinutes,
-    fcntIssueEnabled,
-    fcntIssueThreshold,
-    fcntFilter
-  });
+  // console.log('[App] Collected filter options:', {
+  //   gapEnabled,
+  //   gapMinutes,
+  //   gapThresholdMinutes,
+  //   inactiveEnabled,
+  //   inactiveSinceMinutes,
+  //   fcntIssueEnabled,
+  //   fcntIssueThreshold,
+  //   fcntFilter
+  // });
   
   return { filterWindow, gapThresholdMinutes, fcntFilter, inactiveSinceMinutes };
 }
@@ -731,8 +731,6 @@ function rebuildAnalytics() {
   gapThresholdMinutes,
   inactiveSinceMinutes
   });
-  
-  console.log('[App] Building analytics with hierarchical classification:', { threshold, fcntFilter, gapThresholdMinutes });
   
   // 使用階層式分類邏輯，不需要額外篩選
   const { analytics } = buildAnalytics(rawRecords, { classification, filterWindow, gapThresholdMinutes, timezone: currentTimezone });
@@ -754,9 +752,13 @@ function setupEventListeners() {
   setupDragAndDrop();
   
   // Threshold slider/input
-  document.getElementById('threshold')?.addEventListener('input', handleThresholdChange);
+  document.getElementById('threshold')?.addEventListener('input', () => {
+    console.log('[App] ==========Threshold changed==========');
+    handleThresholdChange();
+  });
   // Gap 條件 (勾選才顯示 Gaps 分頁/內容)
   document.getElementById('useNoDataDuration')?.addEventListener('change', () => {
+    console.log('[App] ==========No Data Gap condition changed==========');
     updateGapTabVisibility();
     rebuildAnalytics();
     refreshOverlayIfOpen();
@@ -765,19 +767,37 @@ function setupEventListeners() {
     const enabled = document.getElementById('useNoDataDuration')?.checked;
     if (lbl) lbl.style.display = enabled ? 'inline-flex' : 'none';
   });
-  document.getElementById('noDataDuration')?.addEventListener('input', () => rebuildAnalytics());
+  document.getElementById('noDataDuration')?.addEventListener('input', () => {
+    console.log('[App] ==========No Data Duration condition changed==========');
+    rebuildAnalytics();
+  });
   // Inactive Since 條件
-  document.getElementById('useInactiveSince')?.addEventListener('change', () => { rebuildAnalytics(); refreshOverlayIfOpen(); });
-  document.getElementById('inactiveSinceMinutes')?.addEventListener('input', () => rebuildAnalytics());
+  document.getElementById('useInactiveSince')?.addEventListener('change', () => { 
+    console.log('[App] ==========Inactive Since condition changed==========');
+    rebuildAnalytics();
+    refreshOverlayIfOpen(); 
+  });
+  document.getElementById('inactiveSinceMinutes')?.addEventListener('input', () => {
+    console.log('[App] ==========Inactive Since threshold changed==========');
+    rebuildAnalytics();
+  });
   // FCNT Issue 條件
-  document.getElementById('useFcntIssue')?.addEventListener('change', () => { rebuildAnalytics(); refreshOverlayIfOpen(); });
-  document.getElementById('fcntrIssueThreshold')?.addEventListener('input', () => rebuildAnalytics());
+  document.getElementById('useFcntIssue')?.addEventListener('change', () => { 
+    console.log('[App] ==========FCNT Issue condition changed==========');
+    rebuildAnalytics(); refreshOverlayIfOpen(); 
+  });
+  document.getElementById('fcntrIssueThreshold')?.addEventListener('input', () => {
+    console.log('[App] ==========FCNT Issue threshold changed==========');
+    rebuildAnalytics();
+  });
   // 時間視窗（移除 checkbox 監聽器，只監聽日期輸入）
   document.getElementById('startDate')?.addEventListener('input', () => {
+    console.log('[App] ========Start date changed========');
     rebuildAnalytics();
     refreshOverlayIfOpen();
   });
   document.getElementById('endDate')?.addEventListener('input', () => {
+    console.log('[App] ========End date changed========');
     rebuildAnalytics();
     refreshOverlayIfOpen();
   });
@@ -1074,6 +1094,12 @@ function refreshOverlayIfOpen() {
   } else if (window.createNodeGwBarChart) {
     window.createNodeGwBarChart(devname, devaddr);
   }
+  // 更新解析圖表（若存在）
+  if (window.updateNodeParsedChart) {
+    window.updateNodeParsedChart(devname, devaddr);
+  } else if (window.createNodeParsedChart) {
+    window.createNodeParsedChart(devname, devaddr);
+  }
 }
 
 /** 檔案選擇處理 */
@@ -1153,8 +1179,6 @@ function handleShowAllNodes() {
     inactiveSinceMinutes
   });
   
-  console.log('[App] Building analytics for all nodes with classification:', classification);
-  
   // 重新分析所有資料（不包含特殊篩選條件）
   const { analytics } = buildAnalytics(rawRecords, { 
     classification, 
@@ -1206,7 +1230,7 @@ function handleShowAllNodes() {
 function showLoadingState() {
   document.getElementById('csvFile') && (document.getElementById('csvFile').disabled = true);
   document.getElementById('threshold') && (document.getElementById('threshold').disabled = true);
-  console.log('[App] Loading...');
+  console.log('[App] =========Start Loading File & Analyzing=========');
 }
 
 /**
@@ -1215,7 +1239,7 @@ function showLoadingState() {
 function hideLoadingState() {
   document.getElementById('csvFile') && (document.getElementById('csvFile').disabled = false);
   document.getElementById('threshold') && (document.getElementById('threshold').disabled = false);
-  console.log('[App] Loading complete');
+  console.log('[App] =========Loading & Analyzing complete=========');
 }
 
 /**

@@ -1,12 +1,13 @@
 # 資料格式與統計分析規格（方案 B：重構後最終版）
 
-更新日期：2025-09-24（同步目前程式實作：時區切日、頻率/網關基準、duplicateRate/gap 欄位等）
+更新日期：2025-10-01（同步目前程式實作：時區切日、頻率/網關基準、duplicateRate/gap 欄位等）
 
 新增：
 - FCnt Reset 例外分類 `exception` 規格（第三分類）與「規則式 (rule-based) 多指標分類」。
 - 支援以 IANA 時區切日與 gap 偵測（含日界線）。
 - 頻率與網關的全域基準集合，提供 node total/daily 的 counts 與 used 清單。
 - duplicateRate 與 maxGapMinutes 欄位。
+- 解析後 JSON 結構索引：於每個節點輸出 `payloadJsonTree` 與 `payloadJsonPaths`，供前端以多層下拉選單瀏覽/選取可繪圖數值路徑。
 
 本文目標：
 1. 定義新 CSV 欄位對內部標準欄位的映射與轉型規則。
@@ -14,7 +15,7 @@
 3. 定義重構後統計核心架構（最終版）：`analytics.perNode` / `analytics.global` / `analytics.threshold` / `analytics.meta`。
 4. 提供完整 TypeScript 介面（無過渡欄位）。
 5. 說明主要指標與流程（Pseudo Steps）。
-6. 範例輸出 JSON（含 rule-based classification 與 GAP 範例）。
+6. 範例輸出 JSON（含 rule-based classification、GAP 與 Payload JSON 結構索引範例）。
 7. 邊界情境與後續擴充建議。
 
 > 舊版的 `organizedRecords.*` 架構已淘汰，僅保留本文件最終版 `analytics` 定義；不再提供任何過渡 (legacy) 欄位。
@@ -150,6 +151,24 @@ interface AnalyticsContainer {
 ## 4. TypeScript 型別（最終）
 
 ```ts
+// 4.0 JSON 路徑/樹索引（供前端下拉選單使用）
+export type JsonValueType = 'number' | 'string' | 'boolean' | 'object' | 'array' | 'null' | 'unknown';
+
+export type JsonTreeNode = {
+  key: string;                  // 屬性名稱；陣列統一以 '*' 表示泛型索引（例：sensors[*].value）
+  path: string;                 // 以 dot/bracket 表示的完整路徑（例："message.data[0].value" → 規範化為 "message.data[*].value"）
+  type: JsonValueType[];        // 該路徑出現過的型別聯集
+  count: number;                // 在 parsedData 中出現的筆數（含 null/unknown）
+  children?: JsonTreeNode[];    // 物件/陣列的子節點
+};
+
+export type JsonPathStat = {
+  path: string;                 // 唯一路徑（含 '*' 規範化）
+  types: JsonValueType[];       // 出現過的型別
+  count: number;                // 出現次數
+  chartable: boolean;           // 是否可直接作為 y 值繪圖（通常 numeric leaf）
+};
+
 // 4.1 原始記錄
 export type RawRecord = {
   Time: Date;
@@ -188,6 +207,7 @@ export type NodeDailyStat = {
   expectedSource?: 'fcnt' | 'baseline-fixed' | 'baseline-median' | 'interpolated';
   baselineExpected?: number;
   // 網關與頻率
+  dataRatesUsed?: string[];
   frequenciesUsed?: number[];
   frequencyCounts?: Record<string, number>;
   gatewaysUsed?: string[];
@@ -232,6 +252,17 @@ export type NodeStat = {
     exceptionLabels?: string[];
     exceptionNotes?: string[];
     exceptionNoteMap?: Record<string, string[]>;
+    // 解析資料結果（總體）
+    parsedData?: Array<{
+      timestamp: string;     // ISO 時間戳記
+      fcnt: number | null;   // 對應的 FCnt 值
+      data: any;            // 解析後的資料內容
+      rawData?: string;     // 原始 Data hex 字串
+      combinedFrom?: number[]; // 若需組合多筆資料才能解析，記錄組合的 FCnt 清單
+    }>;
+    // 解析資料結構索引（供 UI 以多層下拉選單選取路徑）
+    payloadJsonTree?: JsonTreeNode[];  // 聚合後的 JSON 樹（根為虛擬，陣列表示多個根屬性）
+    payloadJsonPaths?: JsonPathStat[]; // 扁平化索引（含可繪圖 chartable 標記）
   };
   timeline: {
     firstTime: string | null;
@@ -246,7 +277,7 @@ export type NodeStat = {
 export type GlobalDailyStat = {
   date: string;
   nodes: number;               // 當日有上行資料節點數
-  nodesTotal: number;          // 全期間節點總數（含補齊日）
+  nodesTotal?: number;         // 全期間節點總數（含補齊日）
   uniquePackets: number;
   totalWithDuplicates: number;
   duplicatePackets: number;
@@ -338,6 +369,17 @@ export type ClassificationConfig = {
   defaultCategory: string;
   rules: ClassificationRule[];
   metricsAlias?: Record<string,string>;
+  filterOptions?: {
+    lossRateThreshold?: number;
+    fcntFilter?: {
+      enabled: boolean;
+    };
+    inactiveSinceMinutes?: number | null;
+    advanced?: {
+      gapThresholdMinutes?: number | null;
+    };
+  };
+  hierarchical?: boolean;
 };
 
 // 4.8 Meta
@@ -397,6 +439,12 @@ export interface ProcessResult {
    - unique 與 duplicate：以 Map<Fcnt,count> 判斷；duplicatePackets = totalWithDuplicates - uniquePackets；duplicateRate = duplicatePackets/totalWithDuplicates*100（分母 0 → -1）。
    - 品質平均：RSSI/SNR 忽略無效值；加總/樣本數；無樣本→null。
    - timeline：最早/最晚時間、fcntSpan（不足兩筆→-1）、resetCount。
+  - **解析 Data 欄位**：
+    1) 嘗試解析每筆上行記錄的 `Data` hex 字串；若需要多筆資料組合才能成功解析，則記錄 `combinedFrom` 陣列；解析成功的結果包含時間戳、FCnt 和解析後的資料內容；失敗的記錄不加入 `parsedData` 陣列。
+    2) 基於 `parsedData[].data` 建立「JSON 結構索引」：
+      - 規範化陣列索引，統一以 `[*]` 代表任意索引（例：`arr[0].value` → `arr[*].value`）。
+      - 聚合為 `payloadJsonTree`（供階層式選單）與 `payloadJsonPaths`（供快速查找與過濾）。
+      - 將葉節點且型別包含 number 的路徑標記為 `chartable=true`，供圖表直接選用。
    - daily：依 UI 指定 IANA 時區（未指定則本地）切日，重算上述邏輯；日界線 GAP 也會偵測（00:00~首筆、末筆~23:59:59）。
    - frequencies：total 與 daily 都輸出 `frequenciesUsed` 與 `frequencyCounts`（以全域基準補零對齊）。
    - gateways：total 與 daily 都輸出 `gatewaysUsed` 與 `gatewayCounts`（以全域基準補零對齊）。
@@ -458,6 +506,9 @@ export interface ProcessResult {
 | frequencyCounts | 以 `global.frequenciesUsed` 為基準的計數表（Record<string, number>）。未使用的頻率也有 key=0。 |
 | gatewaysUsed | 陣列：範圍內實際被接收過的 Gateway MAC 地址（排序去重）。`global.gatewaysUsed` 為全域基準。 |
 | gatewayCounts | 以 `global.gatewaysUsed` 為基準的計數表（Record<string, number>）。未接收的 gateway 也有 key=0。 |
+| parsedData | 陣列：成功解析的 Data hex 字串結果。每個元素包含時間戳、FCnt、解析後資料內容、原始 hex 字串，以及（若適用）組合來源 FCnt 清單。失敗的解析不會產生記錄。 |
+| payloadJsonTree | 依據所有成功解析之 `parsedData[].data` 聚合而成的 JSON 屬性樹（陣列索引以 `[*]` 規範化）。供前端以階層式下拉選單逐層展開。 |
+| payloadJsonPaths | 扁平化之路徑索引，含 `types`、`count` 與 `chartable` 標記；`chartable=true` 表示可直接作為 y 值繪圖的數值葉節點。 |
 
 ---
 
@@ -506,7 +557,49 @@ export interface ProcessResult {
           "gapThresholdMinutes": 10,
           "lossGapFcnt": [ [10100, 10125], [10500, 11020] ],
           "lossGapTime": [ ["2025-08-19T02:10:02.000Z", "2025-08-19T02:35:30.000Z"], ["2025-08-19T05:00:10.000Z", "2025-08-19T06:45:05.000Z"] ],
-          "maxGapMinutes": 105
+          "maxGapMinutes": 105,
+          "payloadJsonPaths": [
+            { "path": "temperature", "types": ["number"], "count": 118, "chartable": true },
+            { "path": "humidity", "types": ["number"], "count": 118, "chartable": true },
+            { "path": "battery", "types": ["number"], "count": 120, "chartable": true },
+            { "path": "vibration.x", "types": ["number"], "count": 42, "chartable": true },
+            { "path": "vibration.y", "types": ["number"], "count": 42, "chartable": true },
+            { "path": "vibration.z", "types": ["number"], "count": 42, "chartable": true },
+            { "path": "message.payload[*].value", "types": ["number","string"], "count": 15, "chartable": true }
+          ],
+          "payloadJsonTree": [
+            { "key": "temperature", "path": "temperature", "type": ["number"], "count": 118 },
+            { "key": "humidity", "path": "humidity", "type": ["number"], "count": 118 },
+            { "key": "battery", "path": "battery", "type": ["number"], "count": 120 },
+            { "key": "vibration", "path": "vibration", "type": ["object"], "count": 42, "children": [
+              { "key": "x", "path": "vibration.x", "type": ["number"], "count": 42 },
+              { "key": "y", "path": "vibration.y", "type": ["number"], "count": 42 },
+              { "key": "z", "path": "vibration.z", "type": ["number"], "count": 42 }
+            ]},
+            { "key": "message", "path": "message", "type": ["object"], "count": 15, "children": [
+              { "key": "payload", "path": "message.payload", "type": ["array"], "count": 15, "children": [
+                { "key": "*", "path": "message.payload[*]", "type": ["object"], "count": 15, "children": [
+                  { "key": "value", "path": "message.payload[*].value", "type": ["number","string"], "count": 15 }
+                ]}
+              ]}
+            ]}
+          ],
+          "parsedData": [
+            {
+              "timestamp": "2025-08-19T03:04:26.000Z",
+              "fcnt": 18302,
+              "data": { "temperature": 23.5, "humidity": 65.2, "battery": 3.7 },
+              "rawData": "817E3A50A3686D",
+              "combinedFrom": [18302]
+            },
+            {
+              "timestamp": "2025-08-19T05:15:30.000Z",
+              "fcnt": 18350,
+              "data": { "vibration": { "x": 0.15, "y": 0.12, "z": 0.08 }, "status": "normal" },
+              "rawData": "825F4B60B4797E",
+              "combinedFrom": [18349, 18350]
+            }
+          ]
         },
         "timeline": { "firstTime":"2025-08-19T00:01:02.000Z", "lastTime":"2025-08-19T23:59:40.000Z", "fcntSpan":520, "resetCount":1 },
         "daily": [ 
@@ -538,14 +631,22 @@ export interface ProcessResult {
       "timezone":"Asia/Taipei",
       "timeRange": { "start":"2025-08-19T00:00:30.000Z", "end":"2025-08-19T23:59:59.000Z", "days":1 },
       "classification": {
-        "version": "1.0.0",
+        "version": "hierarchical-2",
         "defaultCategory": "normal",
         "rules": [
-          { "metric": "resetCount", "op": ">=", "value": 3, "category": "exception", "note": "resetCount >= 3" },
-          { "metric": "maxGapMinutes", "op": ">=", "value": 60, "category": "exception", "note": "No Data Gap >= 60 min" },
-          { "metric": "lossRate", "op": ">", "value": 5, "category": "abnormal", "note": "lossRate > 5%" }
+          { "metric": "lossRate", "op": ">", "value": 0, "category": "abnormal", "note": "lossRate > 0%", "priority": 2 }
         ],
-        "metricsAlias": { "lossRate": "Loss Rate %", "resetCount": "FCnt Resets" }
+        "filterOptions": {
+          "lossRateThreshold": 0,
+          "fcntFilter": {
+            "enabled": false
+          },
+          "inactiveSinceMinutes": null,
+          "advanced": {
+            "gapThresholdMinutes": null
+          }
+        },
+        "hierarchical": true
       }
     }
   }
