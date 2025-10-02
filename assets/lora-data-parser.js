@@ -20,18 +20,6 @@ class LoRaDataParser {
         if (typeof EvaLoRaParser !== 'undefined') {
             this.evaParser = new EvaLoRaParser();
         }
-        
-        // 如果在 Node.js 環境中
-        if (typeof require !== 'undefined') {
-            try {
-                const WiseLoRaParser = require('./wise-parser-api.js');
-                const EvaLoRaParser = require('./eva-parser-api.js');
-                this.wiseParser = new WiseLoRaParser();
-                this.evaParser = new EvaLoRaParser();
-            } catch (e) {
-                console.warn('無法載入解析器模組:', e.message);
-            }
-        }
     }
 
     /**
@@ -47,10 +35,10 @@ class LoRaDataParser {
     parse(hexString, options = {}) {
         try {
             const {
-                type = 'auto',
+                type,
                 fport,
                 macAddress,
-                enableStorage = false
+                enableStorage = true
             } = options;
 
             if (!hexString) {
@@ -67,20 +55,21 @@ class LoRaDataParser {
 
             let result;
 
-            switch (type.toLowerCase()) {
-                case 'wise':
-                    result = this.parseWise(hexString, { macAddress, enableStorage });
-                    break;
-                case 'eva':
-                    if (fport === undefined) {
-                        throw new Error('EVA 模組解析需要提供 fport 參數');
-                    }
-                    result = this.parseEva(hexString, fport);
-                    break;
-                case 'auto':
-                default:
-                    result = this.autoDetectAndParse(hexString, options);
-                    break;
+            if (!type || typeof type !== 'string') {
+                throw new Error('未指定解析器類型，請選擇 WISE 或 EVA');
+            }
+
+            const t = type.toLowerCase();
+            if (t === 'wise') {
+                result = this.parseWise(hexString, { macAddress, enableStorage });
+            } else if (t === 'eva') {
+                if (fport === undefined) {
+                    throw new Error('EVA 模組解析需要提供 fport 參數');
+                }
+                result = this.parseEva(hexString, fport);
+            } else {
+                // 不支援的類型一律視為未指定
+                throw new Error('未指定解析器類型，請選擇 WISE 或 EVA');
             }
 
             return {
@@ -138,100 +127,7 @@ class LoRaDataParser {
         };
     }
 
-    /**
-     * 自動檢測並解析數據
-     * @param {string} hexString - 十六進制字符串
-     * @param {Object} options - 選項
-     * @returns {Object} 解析結果
-     */
-    autoDetectAndParse(hexString, options = {}) {
-        const detectionResult = this.detectDataType(hexString, options);
-        
-        if (detectionResult.type === 'eva') {
-            return this.parseEva(hexString, options.fport || 6);
-        } else if (detectionResult.type === 'wise') {
-            return this.parseWise(hexString, options);
-        } else {
-            // 嘗試兩種解析器
-            const results = [];
-            
-            // 先嘗試 WISE 解析器
-            if (this.wiseParser) {
-                try {
-                    const wiseResult = this.parseWise(hexString, options);
-                    if (wiseResult.success) {
-                        results.push({ ...wiseResult, parser: 'wise' });
-                    }
-                } catch (e) {
-                    // 忽略錯誤，繼續嘗試其他解析器
-                }
-            }
-
-            // 嘗試 EVA 解析器
-            if (this.evaParser && options.fport !== undefined) {
-                try {
-                    const evaResult = this.parseEva(hexString, options.fport);
-                    if (evaResult.success) {
-                        results.push({ ...evaResult, parser: 'eva' });
-                    }
-                } catch (e) {
-                    // 忽略錯誤
-                }
-            }
-
-            if (results.length === 0) {
-                throw new Error('無法解析數據，請檢查數據格式或指定正確的解析器類型');
-            }
-
-            // 返回第一個成功的結果
-            return results[0];
-        }
-    }
-
-    /**
-     * 檢測數據類型
-     * @param {string} hexString - 十六進制字符串
-     * @param {Object} options - 選項
-     * @returns {Object} 檢測結果
-     */
-    detectDataType(hexString, options = {}) {
-        const length = hexString.length / 2;
-        
-        // EVA 模組特徵檢測
-        if (length >= 4 && length <= 22 && options.fport !== undefined) {
-            const validFPorts = [6, 7, 14]; // EVA 支援的 fPort
-            if (validFPorts.includes(options.fport)) {
-                return {
-                    type: 'eva',
-                    confidence: 0.8,
-                    reason: 'fPort 和數據長度符合 EVA 特徵'
-                };
-            }
-        }
-
-        // WISE 模組特徵檢測
-        if (length >= 4) {
-            const firstByte = parseInt(hexString.substring(0, 2), 16);
-            
-            // 檢查 WISE 幀頭特徵
-            const hasFirstSegment = (firstByte & 0x80) !== 0;
-            const frameVersion = firstByte & 0x03;
-            
-            if (frameVersion <= 1) {
-                return {
-                    type: 'wise',
-                    confidence: 0.7,
-                    reason: '幀版本和結構符合 WISE 特徵'
-                };
-            }
-        }
-
-        return {
-            type: 'unknown',
-            confidence: 0,
-            reason: '無法確定數據類型'
-        };
-    }
+    // 已移除自動偵測與解析功能，強制要求明確指定解析器類型
 
     /**
      * 批量解析數據
@@ -322,8 +218,6 @@ class LoRaDataParser {
 }
 
 // 導出模組
-if (typeof module !== 'undefined' && module.exports) {
-    module.exports = LoRaDataParser;
-} else if (typeof window !== 'undefined') {
+if (typeof window !== 'undefined') {
     window.LoRaDataParser = LoRaDataParser;
 }

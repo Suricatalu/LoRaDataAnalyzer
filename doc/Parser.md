@@ -134,7 +134,7 @@ var data = parser.getContext("FFTDataStorage" + macAddress);
 **參數:**
 - `hexString` (string): 十六進制數據字符串
 - `options` (object): 解析選項
-  - `type` (string): 解析器類型 ('wise', 'eva', 'auto')
+    - `type` (string): 解析器類型 ('wise', 'eva')
   - `fport` (number): fPort 值 (EVA 模組必需)
   - `macAddress` (string): MAC 地址
   - `enableStorage` (boolean): 是否啟用存儲
@@ -224,14 +224,14 @@ var data = parser.getContext("FFTDataStorage" + macAddress);
 
 ## 使用示例
 
-### 示例 1: 自動檢測解析器類型
+### 示例 1: 明確指定解析器類型
 
 ```javascript
 const parser = new LoRaDataParser();
 
-// 自動檢測並解析
+// 明確指定 EVA 並提供 fport
 const result = parser.parse("014a00101209100011", { 
-    type: 'auto',
+    type: 'eva',
     fport: 6 
 });
 
@@ -483,7 +483,7 @@ if (!result.success) {
 | 封包重組 | ❌ | ✅ |
 | 瀏覽器存儲 | ❌ | ✅ |
 | 批量處理 | ✅ | ✅ |
-| 自動檢測 | ✅ | ❌ |
+| 自動檢測 | ❌ | ❌ |
 
 ## 與原始版本的對應關係
 

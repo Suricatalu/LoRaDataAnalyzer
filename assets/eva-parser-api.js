@@ -557,9 +557,7 @@ class EvaLoRaParser {
     }
 }
 
-// 導出模組
-if (typeof module !== 'undefined' && module.exports) {
-    module.exports = EvaLoRaParser;
-} else if (typeof window !== 'undefined') {
+// 導出模組（瀏覽器）
+if (typeof window !== 'undefined') {
     window.EvaLoRaParser = EvaLoRaParser;
 }

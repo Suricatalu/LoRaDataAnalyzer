@@ -1703,19 +1703,24 @@ function collectParsedSeriesForNode(devname, devaddr, parserType, jsonPath) {
   };
 
   const points = [];
+  // Reverse order to have older points first
+  filtered = filtered.slice().reverse();
+  // 逐筆解析
   for (const r of filtered) {
     const hex = getField(r,'Data','Payload','Hex');
     if (!hex || typeof hex !== 'string') continue;
     let parsed = null;
     try {
       if (parserType === 'wise') {
+        // print out 3rd and 4 th of hex
         parsed = parser.parseWise(hex, { macAddress: getField(r,'DevEUI','Mac','MAC'), enableStorage:false });
       } else if (parserType === 'eva') {
         const fp = fportGetter(r);
         if (fp == null || fp === '') continue; // EVA 需要 fport
         parsed = parser.parseEva(hex, Number(fp));
       } else {
-        parsed = parser.autoDetectAndParse(hex, { fport: fportGetter(r) });
+        // 取消自動解析：未指定 parserType 時不解析
+        parsed = null;
       }
     } catch(e) {
       // 單筆解析失敗忽略

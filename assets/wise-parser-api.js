@@ -20,7 +20,6 @@ class WiseLoRaParser {
         
         // 初始化狀態存儲 - 替代 Node-RED context
         this.contextStore = options.contextStore || new Map();
-        this.enableBrowserStorage = options.enableBrowserStorage || false;
     }
 
     /**
@@ -182,25 +181,18 @@ class WiseLoRaParser {
 
     /**
      * Context 操作 - 設定值 (替代 Node-RED context.set)
+     * 僅使用記憶體 Map 作為儲存層
      */
     setContext(key, value) {
-        if (this.enableBrowserStorage && typeof localStorage !== 'undefined') {
-            localStorage.setItem(`wise_parser_${key}`, JSON.stringify(value));
-        } else {
-            this.contextStore.set(key, value);
-        }
+        this.contextStore.set(key, value);
     }
 
     /**
      * Context 操作 - 取得值 (替代 Node-RED context.get)
+     * 僅使用記憶體 Map 作為儲存層，避免 falsy 值被誤判為 null
      */
     getContext(key) {
-        if (this.enableBrowserStorage && typeof localStorage !== 'undefined') {
-            const item = localStorage.getItem(`wise_parser_${key}`);
-            return item ? JSON.parse(item) : null;
-        } else {
-            return this.contextStore.get(key) || null;
-        }
+        return this.contextStore.has(key) ? this.contextStore.get(key) : null;
     }
 
     /**
@@ -255,9 +247,10 @@ class WiseLoRaParser {
                 }
                 this.hexArr = result.hexArr;
             } else {
+                // console.log("Received First Segment.");
                 this.setContext('ReceivedFirstSegment' + this.payload_mac, "");
                 if (!this.checkPayloadLengthAndSetStorage(this.hexArr, null)) {
-                    console.log("Need Packet Reassemble.");
+                    // console.log("Need Packet Reassemble.");
                     return { success: false, needReassemble: true };
                 }
             }
@@ -296,6 +289,7 @@ class WiseLoRaParser {
         const payloadStorage = this.getContext('payloadStorage' + this.payload_mac) || {};
 
         if (payloadStorage.sequence === this.hexArr[1]) {
+            console.log("Sequence number repeat. Drop this packet.");
             return {
                 success: false,
                 error: "Sequence number repeat. Drop this packet."
@@ -304,6 +298,7 @@ class WiseLoRaParser {
 
         if (typeof payloadStorage.sequence === 'undefined' || 
             ((payloadStorage.sequence === 255) ? 0 : (payloadStorage.sequence + 1)) !== this.hexArr[1]) {
+            console.log("Sequence number error. Packet may be lost.");
             let errorMsg = "Sequence number error. Packet may be lost.";
             if (typeof this.getContext('ReceivedFirstSegment' + this.payload_mac) === "undefined") {
                 errorMsg += "This is normal when deploying just began.";
@@ -316,6 +311,7 @@ class WiseLoRaParser {
 
         if (typeof payloadStorage.time === 'undefined' || 
             new Date().getTime() - payloadStorage.time > 60000) {
+            console.log("Timeout. Drop stored packet.");
             return {
                 success: false,
                 error: "Timeout."
@@ -326,7 +322,7 @@ class WiseLoRaParser {
         const combinedHexArr = payloadStorage.payload.concat(this.hexArr.slice(2));
 
         if (!this.checkPayloadLengthAndSetStorage(combinedHexArr, currentSeq)) {
-            console.log("Need Packet Reassemble.");
+            // console.log("Need Packet Reassemble.");
             return { success: false, needReassemble: true };
         }
 
@@ -1238,9 +1234,7 @@ class WiseLoRaParser {
     }
 }
 
-// 導出模組
-if (typeof module !== 'undefined' && module.exports) {
-    module.exports = WiseLoRaParser;
-} else if (typeof window !== 'undefined') {
+// 導出模組（瀏覽器）
+if (typeof window !== 'undefined') {
     window.WiseLoRaParser = WiseLoRaParser;
 }
