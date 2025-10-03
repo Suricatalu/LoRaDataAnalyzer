@@ -347,6 +347,7 @@ function parseCSVRaw(csvText, opts = {}) {
       if (opts.onRowError) opts.onRowError(i + 1, (err && err.message) || 'Unknown row error');
     }
   }
+  records.reverse(); // 使較舊的記錄在前面
   console.log("Raw Records:", records);
   return records;
 }

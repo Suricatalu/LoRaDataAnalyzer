@@ -340,6 +340,8 @@ const DEFAULT_CLASSIFICATION = {
  * @param {Object} [options.classification] - 覆寫 classification config
  * @param {string} [options.version] - analytics meta version
  * @param {number} [options.gapThresholdMinutes] - 啟用 gap 偵測的分鐘閾值 (>0)
+ * @param {boolean} [options.enablePayloadParsing] - 是否啟用 payload 預解析（預設 false）
+ * @param {'wise'|'eva'} [options.payloadParserType] - 若啟用預解析，指定解析器類型（未指定則採用內部回退策略）
  * @returns {{records:RawRecord[], analytics: AnalyticsContainer}}
  */
 function buildAnalytics(records, options = {}) {
@@ -348,6 +350,8 @@ function buildAnalytics(records, options = {}) {
   const gapThresholdMinutes = typeof options.gapThresholdMinutes === 'number' && options.gapThresholdMinutes > 0 ? options.gapThresholdMinutes : undefined;
   const dailyFill = normalizeDailyFill(options.dailyFill);
   const timezone = options.timezone; // 由 UI 時區選擇傳入 (IANA)
+  const enablePayloadParsing = options.enablePayloadParsing === true;
+  const payloadParserType = options.payloadParserType; // 'wise' | 'eva'
 
   
 
@@ -374,6 +378,49 @@ function buildAnalytics(records, options = {}) {
     startBoundary: fw.start, 
     endBoundary: fw.end 
   }));
+
+  // 4.B 解析 payload 並建立 payloadJsonTree（依 Analysis.md 規格）
+  if (enablePayloadParsing) {
+    try {
+      // 嘗試取得 Parser 類別（僅瀏覽器環境）
+      const ParserCtor = (typeof window !== 'undefined' && window.LoRaDataParser) ? window.LoRaDataParser : null;
+      const parser = ParserCtor ? new ParserCtor() : null;
+      // 建立 devAddr -> NodeStat 快速索引
+      const nodeByAddr = new Map();
+      for (const n of perNode) nodeByAddr.set(n.id.devAddr, n);
+      // 對每個節點取出原始上行紀錄，解析並彙總 JSON 結構
+      for (const [devAddr, entry] of nodeMap.entries()) {
+        const node = nodeByAddr.get(devAddr);
+        if (!node) continue;
+        const parsedList = parser ? buildParsedDataForRecords(entry.records, parser, payloadParserType) : [];
+        if (parsedList.length) {
+          node.total.parsedData = parsedList;
+          const tree = buildPayloadJsonTree(parsedList.map(p => p.data));
+          node.total.payloadJsonTree = tree;
+          // 依需求：直接輸出至 console
+          try {
+            const name = node.id.devName || node.id.devAddr;
+            console.log('[payloadJsonTree]', name, tree);
+          } catch(e) { /* ignore console errors */ }
+        } else {
+          // 無解析成功仍建立空結構以利前端判斷
+          node.total.parsedData = [];
+          node.total.payloadJsonTree = [];
+        }
+      }
+    } catch (e) {
+      // 不干擾主流程
+      console.warn('[Analytics] build payloadJsonTree failed:', e && e.message ? e.message : e);
+    }
+  } else {
+    // 未啟用預解析時，仍建立空結構以利前端判斷
+    for (const n of perNode) {
+      if (n && n.total) {
+        n.total.parsedData = [];
+        n.total.payloadJsonTree = [];
+      }
+    }
+  }
 
   // 4.A 無資料日補齊（依 timeRange 內所有日期）
   const timeRange = calcTimeRange(filteredRecords, timezone);
@@ -1516,4 +1563,184 @@ function buildMeta({ version, excludedCount, filterWindow, timeRange, classifica
 // =============================
 if (typeof window !== 'undefined') {
   window.buildAnalytics = buildAnalytics;
+}
+
+// =============================
+// Payload 解析與 JSON 樹建構
+// =============================
+
+/**
+ * 從節點紀錄解析 payload，產生 parsedData 陣列
+ * @param {Array<Object>} records - 該節點的上行 RawRecord 陣列
+ * @param {any} parser - LoRaDataParser 實例（需提供 parseWise/parseEva）
+ * @param {'wise'|'eva'} [parserType] - 若提供，僅使用指定解析器，不做自動回退
+ * @returns {Array<{timestamp:string, fcnt:number|null, data:any, rawData?:string, combinedFrom?:number[]}>}
+ */
+function buildParsedDataForRecords(records, parser, parserType) {
+  if (!Array.isArray(records) || !records.length || !parser) return [];
+  const out = [];
+  for (const r of records) {
+    try {
+      const hex = r && typeof r.Data === 'string' ? r.Data.trim() : null;
+      if (!hex) continue;
+      const mac = Array.isArray(r.Mac) ? (r.Mac[0] || '') : (typeof r.Mac === 'string' ? r.Mac.split('\n')[0] : '');
+      let parsed = null;
+      // 若指定 parserType，僅使用指定解析器；否則採用 WISE → EVA 的回退策略
+      if (parserType === 'wise') {
+        try { parsed = parser.parseWise(hex, { macAddress: mac, enableStorage: false }); } catch (_) { parsed = null; }
+      } else if (parserType === 'eva') {
+        const fport = (r && typeof r.Port === 'number') ? r.Port : (typeof r.Port === 'string' ? Number(r.Port) : undefined);
+        if (Number.isFinite(fport)) {
+          try { parsed = parser.parseEva(hex, Number(fport)); } catch (_) { parsed = null; }
+        }
+      } else {
+        // 未指定 parserType：優先嘗試 WISE（不需要 fport）；失敗再回退 EVA（需要 Port）
+        try { parsed = parser.parseWise(hex, { macAddress: mac, enableStorage: false }); } catch (_) { parsed = null; }
+        if (!parsed || !parsed.success) {
+          const fport = (r && typeof r.Port === 'number') ? r.Port : (typeof r.Port === 'string' ? Number(r.Port) : undefined);
+          if (Number.isFinite(fport)) {
+            try { parsed = parser.parseEva(hex, Number(fport)); } catch (_) { parsed = null; }
+          }
+        }
+      }
+      if (!parsed || !parsed.success) continue;
+      const payload = parsed.data || parsed.message || null;
+      if (payload == null) continue;
+      const ts = (r.Time instanceof Date) ? r.Time.toISOString() : (r.Time ? new Date(r.Time).toISOString() : new Date().toISOString());
+      out.push({ timestamp: ts, fcnt: (Number.isFinite(r.Fcnt) ? r.Fcnt : null), data: payload, rawData: hex });
+    } catch (e) { /* ignore single record parse error */ }
+  }
+  return out;
+}
+
+/**
+ * 依據 Analysis.md 規格建立 payloadJsonTree（陣列根節點）
+ * JsonTreeNode: { key, path, type: JsonValueType[], count, children? }
+ * - 陣列索引統一使用 [*]
+ * - type 聯集出現的所有型別
+ */
+function buildPayloadJsonTree(objects) {
+  if (!Array.isArray(objects) || !objects.length) return [];
+  const map = new Map(); // path -> { key, path, types:Set, count, children:Set<path> }
+
+  const addNode = (path, key, type) => {
+    if (!map.has(path)) map.set(path, { key, path, types: new Set(), count: 0, children: new Set() });
+    const node = map.get(path);
+    if (type) node.types.add(type);
+    node.count += 1;
+  };
+  const linkParent = (parentPath, childPath) => {
+    if (!parentPath && parentPath !== '') return;
+    if (!map.has(parentPath)) {
+      // 建立父占位（未知型別）
+      const parentKey = getKeyFromPath(parentPath);
+      map.set(parentPath, { key: parentKey, path: parentPath, types: new Set(), count: 0, children: new Set() });
+    }
+    map.get(parentPath).children.add(childPath);
+  };
+
+  const walk = (val, curPath) => {
+    const t = inferJsonType(val);
+    const key = getKeyFromPath(curPath);
+    addNode(curPath, key, t);
+    if (t === 'object' && val) {
+      for (const k of Object.keys(val)) {
+        const childPath = curPath ? `${curPath}.${k}` : k;
+        linkParent(curPath, childPath);
+        walk(val[k], childPath);
+      }
+    } else if (t === 'array' && Array.isArray(val)) {
+      // 先在當前路徑標註 array，再走入泛型索引 [*]
+      const itemPath = `${curPath}[*]`;
+      linkParent(curPath, itemPath);
+      // 元素型別聚合到 itemPath
+      if (!map.has(itemPath)) map.set(itemPath, { key: '*', path: itemPath, types: new Set(), count: 0, children: new Set() });
+      const itemNode = map.get(itemPath);
+      for (const it of val) {
+        itemNode.types.add(inferJsonType(it));
+        itemNode.count += 1;
+        // 繼續下探
+        walk(it, itemPath);
+      }
+    }
+  };
+
+  for (const obj of objects) {
+    if (obj && typeof obj === 'object') {
+      // 對每個[root attr]建立節點
+      for (const k of Object.keys(obj)) {
+        const p = k; // root-level path
+        const v = obj[k];
+        // 在根層建立節點並下探
+        walk(v, p);
+      }
+    }
+  }
+
+  // 將 map 轉為樹狀結構（僅輸出根層子節點陣列）
+  const nodes = new Map(); // path -> plain node
+  for (const [path, meta] of map.entries()) {
+    nodes.set(path, {
+      key: meta.key,
+      path,
+      type: Array.from(meta.types.values()).sort(),
+      count: meta.count,
+      children: []
+    });
+  }
+  for (const [path, meta] of map.entries()) {
+    for (const childPath of meta.children) {
+      const parentNode = nodes.get(path);
+      const childNode = nodes.get(childPath);
+      if (parentNode && childNode) parentNode.children.push(childNode);
+    }
+  }
+
+  // 取得根層：其 parentPath 為空字串 ''（即無 '.' 且不以 [*] 結尾的父）
+  const forest = [];
+  for (const [path, node] of nodes.entries()) {
+    const parent = getParentPath(path);
+    // 根層的 parent 為 ''，且 path 本身不為 ''
+    if (parent === '' && path) {
+      forest.push(node);
+    }
+  }
+  // 依 key 排序，星號節點（若有根層陣列）放後
+  forest.sort((a,b)=> (a.key==='*') - (b.key==='*') || a.key.localeCompare(b.key));
+  // 清除空 children 陣列
+  const prune = (n)=>{
+    if (!n.children || !n.children.length) delete n.children;
+    else { n.children.sort((a,b)=> (a.key==='*') - (b.key==='*') || a.key.localeCompare(b.key)); n.children.forEach(prune); }
+  };
+  forest.forEach(prune);
+  return forest;
+}
+
+function inferJsonType(v) {
+  if (v === null) return 'null';
+  if (Array.isArray(v)) return 'array';
+  switch (typeof v) {
+    case 'number': return 'number';
+    case 'string': return 'string';
+    case 'boolean': return 'boolean';
+    case 'object': return 'object';
+    default: return 'unknown';
+  }
+}
+
+function getKeyFromPath(path) {
+  if (!path) return '';
+  if (path.endsWith('[*]')) return '*';
+  const idx = path.lastIndexOf('.');
+  return idx >= 0 ? path.slice(idx+1) : path;
+}
+
+function getParentPath(path) {
+  if (!path) return null;
+  if (path.endsWith('[*]')) {
+    const base = path.slice(0, -3);
+    return base.includes('.') ? base.slice(0, base.lastIndexOf('.')) : '';
+  }
+  const idx = path.lastIndexOf('.');
+  return idx >= 0 ? path.slice(0, idx) : '';
 }

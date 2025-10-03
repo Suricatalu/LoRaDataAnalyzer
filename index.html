@@ -195,16 +195,27 @@
                                 </select>
                             </label>
                             <label style="font-size:12px; color:#ddd; display:flex; align-items:center; gap:6px; min-width:360px; flex:1;">
-                                JSON 路徑:
-                                <input id="payloadParserJsonPath" type="text" placeholder="例如：temperature 或 message.Temp 或 data.temperatureC" style="flex:1; padding:6px 10px; background:#1e1e1e; color:#fff; border:1px solid #444; border-radius:4px;" />
+                                    Parsed Data 1:
+                                    <!-- 隱藏 input 供既有程式讀取與觸發更新 -->
+                                    <input id="payloadParserJsonPath" type="hidden" />
+                                    <!-- 階層式下拉容器 1 -->
+                                    <div id="payloadPathPicker1" class="path-picker" style="flex:1; display:flex; gap:6px; align-items:center; flex-wrap:wrap; min-height:36px;">
+                                        <span style="color:#888; font-style:italic;">請先選擇 Parser 類型</span>
+                                    </div>
                             </label>
                             <label style="font-size:12px; color:#ddd; display:flex; align-items:center; gap:6px; min-width:300px; flex:1;">
-                                JSON 路徑2:
-                                <input id="payloadParserJsonPath2" type="text" placeholder="可選：第二條路徑" style="flex:1; padding:6px 10px; background:#1e1e1e; color:#fff; border:1px solid #444; border-radius:4px;" />
+                                    Parsed Data 2:
+                                    <input id="payloadParserJsonPath2" type="hidden" />
+                                    <div id="payloadPathPicker2" class="path-picker" style="flex:1; display:flex; gap:6px; align-items:center; flex-wrap:wrap; min-height:36px;">
+                                        <span style="color:#888; font-style:italic;">請先選擇 Parser 類型</span>
+                                    </div>
                             </label>
                             <label style="font-size:12px; color:#ddd; display:flex; align-items:center; gap:6px; min-width:300px; flex:1;">
-                                JSON 路徑3:
-                                <input id="payloadParserJsonPath3" type="text" placeholder="可選：第三條路徑" style="flex:1; padding:6px 10px; background:#1e1e1e; color:#fff; border:1px solid #444; border-radius:4px;" />
+                                    Parsed Data 3:
+                                    <input id="payloadParserJsonPath3" type="hidden" />
+                                    <div id="payloadPathPicker3" class="path-picker" style="flex:1; display:flex; gap:6px; align-items:center; flex-wrap:wrap; min-height:36px;">
+                                        <span style="color:#888; font-style:italic;">請先選擇 Parser 類型</span>
+                                    </div>
                             </label>
                             <span id="payloadParserStatus" style="font-size:12px; color:#aaa;"></span>
                         </div>

@@ -723,6 +723,11 @@ function rebuildAnalytics() {
   if (!rawRecords.length) return;
   const threshold = parseFloat(document.getElementById('threshold')?.value) || 0;
   const { filterWindow, gapThresholdMinutes, fcntFilter, inactiveSinceMinutes } = collectFilterOptions();
+
+  // 讀取 Payload Parser 類型（若選擇了 WISE/EVA，啟用預解析以生成 payloadJsonTree）
+  const parserSel = document.getElementById('payloadParserType');
+  const parserType = (parserSel?.value || '').trim().toLowerCase();
+  const enablePayloadParsing = parserType === 'wise' || parserType === 'eva';
   
   // 建立階層式分類配置，包含所有篩選選項
   const classification = buildClassificationConfig({
@@ -733,7 +738,15 @@ function rebuildAnalytics() {
   });
   
   // 使用階層式分類邏輯，不需要額外篩選
-  const { analytics } = buildAnalytics(rawRecords, { classification, filterWindow, gapThresholdMinutes, timezone: currentTimezone });
+  const { analytics } = buildAnalytics(rawRecords, { 
+    classification, 
+    filterWindow, 
+    gapThresholdMinutes, 
+    timezone: currentTimezone,
+    // 啟用/關閉 payload 預解析與指定解析器類型
+    enablePayloadParsing,
+    payloadParserType: enablePayloadParsing ? parserType : undefined
+  });
   
   // 注意：不再進行額外的節點篩選，因為分類邏輯已經處理了所有情況
   // 所有節點都會被保留，只是重新分類為 normal/abnormal/exception
@@ -804,6 +817,27 @@ function setupEventListeners() {
   // 顯示所有節點狀態按鈕
   document.getElementById('showAllNodesBtn')?.addEventListener('click', handleShowAllNodes);
   // Tabs (Overlay 已在 table-manager 內部處理)
+
+  // Payload Parser 下拉變更：立即重建 analytics（以重算 payloadJsonTree）並刷新 overlay
+  const parserSel = document.getElementById('payloadParserType');
+  if (parserSel) {
+    parserSel.addEventListener('change', () => {
+      console.log('[App] ========Payload parser type changed========');
+      rebuildAnalytics();
+      refreshOverlayIfOpen();
+    });
+  }
+  // 若輸入 JSON 路徑，通常只影響圖表，不需要重建 analytics；這裡僅刷新 overlay 的解析圖
+  ['payloadParserJsonPath','payloadParserJsonPath2','payloadParserJsonPath3'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener('input', () => {
+      if (window.updateNodeParsedChart && !document.getElementById('nodeOverlay')?.classList.contains('hidden')) {
+        const title = document.getElementById('overlayTitle')?.textContent || '';
+        const m = title.match(/Device:\s*(.+?)\s*\(addr:\s*(.+?)\)/);
+        if (m) window.updateNodeParsedChart(m[1].trim(), m[2].trim());
+      }
+    });
+  });
 }
 
 /**
@@ -1100,6 +1134,13 @@ function refreshOverlayIfOpen() {
   } else if (window.createNodeParsedChart) {
     window.createNodeParsedChart(devname, devaddr);
   }
+
+  // 重新建立 Payload JSON 路徑的階層式選單（若可用）
+  try {
+    if (window.buildPayloadPathPickers) {
+      window.buildPayloadPathPickers(devname, devaddr);
+    }
+  } catch(e) { /* ignore */ }
 }
 
 /** 檔案選擇處理 */

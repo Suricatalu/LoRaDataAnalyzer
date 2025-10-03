@@ -247,7 +247,6 @@ class WiseLoRaParser {
                 }
                 this.hexArr = result.hexArr;
             } else {
-                // console.log("Received First Segment.");
                 this.setContext('ReceivedFirstSegment' + this.payload_mac, "");
                 if (!this.checkPayloadLengthAndSetStorage(this.hexArr, null)) {
                     // console.log("Need Packet Reassemble.");
@@ -288,6 +287,7 @@ class WiseLoRaParser {
     handlePacketReassembly() {
         const payloadStorage = this.getContext('payloadStorage' + this.payload_mac) || {};
 
+        // console.log("the sequence of received packet:", this.hexArr[1]);
         if (payloadStorage.sequence === this.hexArr[1]) {
             console.log("Sequence number repeat. Drop this packet.");
             return {
@@ -320,6 +320,7 @@ class WiseLoRaParser {
 
         const currentSeq = this.hexArr[1];
         const combinedHexArr = payloadStorage.payload.concat(this.hexArr.slice(2));
+        // console.log("the 3rd and 4th of combinedHexArr:", combinedHexArr[2], combinedHexArr[3]);
 
         if (!this.checkPayloadLengthAndSetStorage(combinedHexArr, currentSeq)) {
             // console.log("Need Packet Reassemble.");

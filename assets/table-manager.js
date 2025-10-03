@@ -971,6 +971,11 @@ function populateNodeCharts(devname, devaddr) {
       }
     }
   } catch(e) { console.warn('[Chart] GAP overlay/render error', e); }
+
+  // 重新構建 Payload JSON 路徑階層式選單（若 Parser 類型剛改變並且 overlay 已刷新至此）
+  try {
+    buildPayloadPathPickers(devname, devaddr);
+  } catch(e) { /* ignore */ }
 }
 
 // Function to resize node chart
@@ -1439,6 +1444,21 @@ function initializeTableRelated() {
           if (window.createNodeParsedChart) {
             try { window.createNodeParsedChart(devname, devaddr); } catch(e) { console.warn('[Overlay] Parsed chart init failed', e); }
           }
+          // 初始化階層式 JSON 路徑選擇器（基於 payloadJsonTree）
+          try {
+            if (!window._initPayloadPathPickersBound) {
+              window._initPayloadPathPickersBound = true;
+              // 當 Parser 類型變更時，重建路徑選擇器（需先 rebuildAnalytics 以生成 payloadJsonTree）
+              const parserSel2 = document.getElementById('payloadParserType');
+              if (parserSel2) {
+                parserSel2.addEventListener('change', () => {
+                  // rebuildAnalytics 會在 app-controller 裡處理並 refreshOverlayIfOpen
+                  // 這裡只需在 overlay 刷新後重新構建（由 refreshOverlayIfOpen -> populateNodeCharts 走到這裡）
+                });
+              }
+            }
+            buildPayloadPathPickers(devname, devaddr);
+          } catch (e) { console.warn('[Overlay] Path pickers init failed', e); }
           // Bind parser controls change events (once)
           const typeSel = document.getElementById('payloadParserType');
           const pathInput = document.getElementById('payloadParserJsonPath');
@@ -1589,11 +1609,139 @@ function initializeTableRelated() {
           if (m && window.updateNodeParsedChart) {
             window.updateNodeParsedChart(m[1].trim(), m[2].trim());
           }
+          // 確保切換到此分頁時，若 payloadJsonTree 已存在也會看到 pickers
+          try {
+            const n = (function(){ const t = document.getElementById('overlayTitle')?.textContent || ''; const mm = t.match(/Device:\s*(.+?)\s*\(addr:\s*(.+?)\)/); return mm ? { devname: mm[1].trim(), devaddr: mm[2].trim() } : null; })();
+            if (n) buildPayloadPathPickers(n.devname, n.devaddr);
+          } catch(e) {}
         }, 150);
       }
     });
   });
 };
+
+// 以 payloadJsonTree 建立階層式下拉：支援三條路徑，各自獨立
+function buildPayloadPathPickers(devname, devaddr) {
+  const analytics = (typeof window.getCurrentAnalytics === 'function') ? window.getCurrentAnalytics() : null;
+  const pickers = [
+    { wrapperId: 'payloadPathPicker1', inputId: 'payloadParserJsonPath' },
+    { wrapperId: 'payloadPathPicker2', inputId: 'payloadParserJsonPath2' },
+    { wrapperId: 'payloadPathPicker3', inputId: 'payloadParserJsonPath3' },
+  ];
+  const inactiveMsg = '<span style="color:#888; font-style:italic;">尚未載入資料</span>';
+  if (!analytics || !Array.isArray(analytics.perNode)) {
+    pickers.forEach(p => { const w = document.getElementById(p.wrapperId); if (w) w.innerHTML = inactiveMsg; });
+    return;
+  }
+  const node = analytics.perNode.find(n => (n.id?.devName === devname) || (n.id?.devAddr === devaddr));
+  const tree = node?.total?.payloadJsonTree || [];
+  pickers.forEach((cfg, idx) => {
+    const wrapper = document.getElementById(cfg.wrapperId);
+    const hiddenInput = document.getElementById(cfg.inputId);
+    if (!wrapper || !hiddenInput) return;
+    // 若無 tree，顯示空態（通常因為尚未解析成功或尚未選擇有效 Parser 類型）
+    if (!Array.isArray(tree) || tree.length === 0) {
+      wrapper.innerHTML = '<span style="color:#888; font-style:italic;">尚無解析結果或沒有可用欄位</span>';
+      hiddenInput.value = '';
+      return;
+    }
+    // 建立容器
+    wrapper.innerHTML = '';
+    const selects = [];
+    const makeSelect = (options, placeholder) => {
+      const sel = document.createElement('select');
+      sel.style.cssText = 'padding:4px 8px; background:#1e1e1e; color:#fff; border:1px solid #444; border-radius:4px;';
+      const ph = document.createElement('option'); ph.value = ''; ph.textContent = placeholder || '選擇'; sel.appendChild(ph);
+      options.forEach(opt => { const o = document.createElement('option'); o.value = opt.path; o.textContent = `${opt.key}${opt.type?` [${opt.type.join('|')}]`:''}`; sel.appendChild(o); });
+      return sel;
+    };
+    const getChildren = (path) => {
+      // 在樹中找到 path 對應節點
+      const dfs = (nodes) => {
+        for (const n of nodes) {
+          if (n.path === path) return n;
+          if (n.children) { const r = dfs(n.children); if (r) return r; }
+        }
+        return null;
+      };
+      const node = dfs(tree);
+      return node && node.children ? node.children : [];
+    };
+    const getRoots = () => tree;
+    const updateHidden = () => {
+      const chosen = selects.map(s => s.value).filter(Boolean);
+      // 將選到的最後一個 path 設為值（完整點路徑）
+      const val = chosen.length ? chosen[chosen.length-1] : '';
+      hiddenInput.value = val;
+      // 觸發 chart 更新
+      const titleText = document.getElementById('overlayTitle')?.textContent || '';
+      const m = titleText.match(/Device:\s*(.+?)\s*\(addr:\s*(.+?)\)/);
+      if (m && window.updateNodeParsedChart) {
+        window.updateNodeParsedChart(m[1].trim(), m[2].trim());
+      }
+    };
+    const rebuildFrom = (level, parentPath) => {
+      // 移除後續 select
+      while (selects.length > level) {
+        const s = selects.pop();
+        s.parentElement && s.parentElement.removeChild(s);
+      }
+      // 取得候選
+      const candidates = level === 0 ? getRoots() : getChildren(parentPath);
+      if (!candidates || candidates.length === 0) { updateHidden(); return; }
+      const sel = makeSelect(candidates, level === 0 ? '[root attr]' : '[child attr]');
+      selects.push(sel);
+      wrapper.appendChild(sel);
+      sel.addEventListener('change', () => {
+        const val = sel.value; // 是完整 path
+        if (!val) { rebuildFrom(level, parentPath); return; }
+        rebuildFrom(level+1, val);
+      });
+      updateHidden();
+    };
+    // 嘗試回填既有值（若使用者之前選過）
+    const prev = (hiddenInput.value || '').trim();
+    if (prev) {
+      // 在樹中尋找從根到目標節點的 path chain
+      const findChain = (nodes, target, acc=[]) => {
+        for (const n of nodes) {
+          const newAcc = acc.concat(n.path);
+          if (n.path === target) return newAcc;
+          if (n.children) {
+            const res = findChain(n.children, target, newAcc);
+            if (res) return res;
+          }
+        }
+        return null;
+      };
+      const chain = findChain(tree, prev) || [];
+      // 從根開始
+      let parent = undefined; let level = 0;
+      while (true) {
+        const candidates = level === 0 ? getRoots() : getChildren(parent);
+        if (!candidates || !candidates.length) break;
+        const sel = makeSelect(candidates, level === 0 ? '[root attr]' : '[child attr]');
+        selects.push(sel); wrapper.appendChild(sel);
+        const want = chain[level];
+        if (want) {
+          sel.value = want;
+          parent = want; level += 1;
+        } else break;
+      }
+      // 綁定最後一個的 change 並嘗試延伸下一層
+      const last = selects[selects.length-1];
+      if (last) {
+        last.addEventListener('change', () => rebuildFrom(selects.length-1, selects.length>1?selects[selects.length-2].value:undefined));
+        rebuildFrom(selects.length, last.value || parent);
+      } else {
+        rebuildFrom(0);
+      }
+      updateHidden();
+    } else {
+      rebuildFrom(0);
+    }
+  });
+}
 
 /**
  * 更新 Overlay 標題並在後方附加 Exception 小徽章
@@ -1667,6 +1815,7 @@ window.refreshTable = refreshTable;
 window.getCurrentTable = getCurrentTable;
 window.getCurrentTableType = getCurrentTableType;
 window.isTableInitialized = isTableInitialized;
+window.buildPayloadPathPickers = buildPayloadPathPickers;
 
 // Auto-resize node chart when window is resized
 window.addEventListener('resize', () => {

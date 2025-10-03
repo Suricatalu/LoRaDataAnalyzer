@@ -1642,6 +1642,7 @@ function resizeNodeParsedChart() {
 
 // 內部：收集某節點的解析序列
 function collectParsedSeriesForNode(devname, devaddr, parserType, jsonPath) {
+  console.log('[ParsedChart] Collecting parsed series for', devname, devaddr, parserType, jsonPath);
   const recs = (typeof window.getRawRecords === 'function') ? window.getRawRecords() : [];
   if (!Array.isArray(recs) || !recs.length) return [];
   // 時間篩選
@@ -1694,17 +1695,30 @@ function collectParsedSeriesForNode(devname, devaddr, parserType, jsonPath) {
     if (!path) return undefined;
     const segs = path.split('.').map(s=>s.trim()).filter(Boolean);
     let cur = obj;
-    for (const s of segs) {
-      if (cur && Object.prototype.hasOwnProperty.call(cur, s)) cur = cur[s];
-      else if (cur && typeof cur === 'object' && s in cur) cur = cur[s];
-      else return undefined;
+    for (let seg of segs) {
+      // 支援像 'data[*]' 的片段：先取 'data' 屬性，再取第一個元素
+      let needsWildcard = false;
+      if (seg.endsWith('[*]')) {
+        needsWildcard = true;
+        seg = seg.slice(0, -3); // 去掉 [*]
+      }
+      if (seg) {
+        if (cur && Object.prototype.hasOwnProperty.call(cur, seg)) cur = cur[seg];
+        else if (cur && typeof cur === 'object' && seg in cur) cur = cur[seg];
+        else return undefined;
+      }
+      if (needsWildcard) {
+        if (Array.isArray(cur) && cur.length > 0) {
+          cur = cur[0];
+        } else {
+          return undefined;
+        }
+      }
     }
     return cur;
   };
 
   const points = [];
-  // Reverse order to have older points first
-  filtered = filtered.slice().reverse();
   // 逐筆解析
   for (const r of filtered) {
     const hex = getField(r,'Data','Payload','Hex');
@@ -1712,7 +1726,6 @@ function collectParsedSeriesForNode(devname, devaddr, parserType, jsonPath) {
     let parsed = null;
     try {
       if (parserType === 'wise') {
-        // print out 3rd and 4 th of hex
         parsed = parser.parseWise(hex, { macAddress: getField(r,'DevEUI','Mac','MAC'), enableStorage:false });
       } else if (parserType === 'eva') {
         const fp = fportGetter(r);

@@ -7,7 +7,8 @@
 - 支援以 IANA 時區切日與 gap 偵測（含日界線）。
 - 頻率與網關的全域基準集合，提供 node total/daily 的 counts 與 used 清單。
 - duplicateRate 與 maxGapMinutes 欄位。
-- 解析後 JSON 結構索引：於每個節點輸出 `payloadJsonTree` 與 `payloadJsonPaths`，供前端以多層下拉選單瀏覽/選取可繪圖數值路徑。
+- 解析後 JSON 結構索引：於每個節點輸出 `payloadJsonTree` 供前端以多層下拉選單瀏覽。
+  備註：為配合「僅需階層式輸入」的 UI，本版移除 `payloadJsonPaths`。如需扁平化索引，可在前端以 DFS 自 `payloadJsonTree` 動態產生。
 
 本文目標：
 1. 定義新 CSV 欄位對內部標準欄位的映射與轉型規則。
@@ -162,13 +163,6 @@ export type JsonTreeNode = {
   children?: JsonTreeNode[];    // 物件/陣列的子節點
 };
 
-export type JsonPathStat = {
-  path: string;                 // 唯一路徑（含 '*' 規範化）
-  types: JsonValueType[];       // 出現過的型別
-  count: number;                // 出現次數
-  chartable: boolean;           // 是否可直接作為 y 值繪圖（通常 numeric leaf）
-};
-
 // 4.1 原始記錄
 export type RawRecord = {
   Time: Date;
@@ -261,8 +255,7 @@ export type NodeStat = {
       combinedFrom?: number[]; // 若需組合多筆資料才能解析，記錄組合的 FCnt 清單
     }>;
     // 解析資料結構索引（供 UI 以多層下拉選單選取路徑）
-    payloadJsonTree?: JsonTreeNode[];  // 聚合後的 JSON 樹（根為虛擬，陣列表示多個根屬性）
-    payloadJsonPaths?: JsonPathStat[]; // 扁平化索引（含可繪圖 chartable 標記）
+    payloadJsonTree?: JsonTreeNode[];  // 聚合後的 JSON 樹（根為虛擬，陣列表示多個[root attr]）
   };
   timeline: {
     firstTime: string | null;
@@ -443,8 +436,8 @@ export interface ProcessResult {
     1) 嘗試解析每筆上行記錄的 `Data` hex 字串；若需要多筆資料組合才能成功解析，則記錄 `combinedFrom` 陣列；解析成功的結果包含時間戳、FCnt 和解析後的資料內容；失敗的記錄不加入 `parsedData` 陣列。
     2) 基於 `parsedData[].data` 建立「JSON 結構索引」：
       - 規範化陣列索引，統一以 `[*]` 代表任意索引（例：`arr[0].value` → `arr[*].value`）。
-      - 聚合為 `payloadJsonTree`（供階層式選單）與 `payloadJsonPaths`（供快速查找與過濾）。
-      - 將葉節點且型別包含 number 的路徑標記為 `chartable=true`，供圖表直接選用。
+      - 聚合為 `payloadJsonTree`（供階層式選單）。
+      - 若需要扁平化索引/快速搜尋，可於前端以 DFS 由 `payloadJsonTree` 動態生成（選項）。
    - daily：依 UI 指定 IANA 時區（未指定則本地）切日，重算上述邏輯；日界線 GAP 也會偵測（00:00~首筆、末筆~23:59:59）。
    - frequencies：total 與 daily 都輸出 `frequenciesUsed` 與 `frequencyCounts`（以全域基準補零對齊）。
    - gateways：total 與 daily 都輸出 `gatewaysUsed` 與 `gatewayCounts`（以全域基準補零對齊）。
@@ -508,7 +501,7 @@ export interface ProcessResult {
 | gatewayCounts | 以 `global.gatewaysUsed` 為基準的計數表（Record<string, number>）。未接收的 gateway 也有 key=0。 |
 | parsedData | 陣列：成功解析的 Data hex 字串結果。每個元素包含時間戳、FCnt、解析後資料內容、原始 hex 字串，以及（若適用）組合來源 FCnt 清單。失敗的解析不會產生記錄。 |
 | payloadJsonTree | 依據所有成功解析之 `parsedData[].data` 聚合而成的 JSON 屬性樹（陣列索引以 `[*]` 規範化）。供前端以階層式下拉選單逐層展開。 |
-| payloadJsonPaths | 扁平化之路徑索引，含 `types`、`count` 與 `chartable` 標記；`chartable=true` 表示可直接作為 y 值繪圖的數值葉節點。 |
+| （扁平化索引） | 如需扁平化路徑索引（含 chartable 標記），可於前端以 DFS 自 `payloadJsonTree` 動態生成。 |
 
 ---
 
@@ -558,15 +551,7 @@ export interface ProcessResult {
           "lossGapFcnt": [ [10100, 10125], [10500, 11020] ],
           "lossGapTime": [ ["2025-08-19T02:10:02.000Z", "2025-08-19T02:35:30.000Z"], ["2025-08-19T05:00:10.000Z", "2025-08-19T06:45:05.000Z"] ],
           "maxGapMinutes": 105,
-          "payloadJsonPaths": [
-            { "path": "temperature", "types": ["number"], "count": 118, "chartable": true },
-            { "path": "humidity", "types": ["number"], "count": 118, "chartable": true },
-            { "path": "battery", "types": ["number"], "count": 120, "chartable": true },
-            { "path": "vibration.x", "types": ["number"], "count": 42, "chartable": true },
-            { "path": "vibration.y", "types": ["number"], "count": 42, "chartable": true },
-            { "path": "vibration.z", "types": ["number"], "count": 42, "chartable": true },
-            { "path": "message.payload[*].value", "types": ["number","string"], "count": 15, "chartable": true }
-          ],
+          // 如需扁平化索引，請在前端由 payloadJsonTree 動態產生
           "payloadJsonTree": [
             { "key": "temperature", "path": "temperature", "type": ["number"], "count": 118 },
             { "key": "humidity", "path": "humidity", "type": ["number"], "count": 118 },
