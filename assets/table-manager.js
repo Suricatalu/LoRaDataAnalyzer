@@ -542,6 +542,29 @@ function isTableInitialized() {
 // Global variable to store node chart instance
 let nodeTimeSeriesChart = null;
 
+// Helper: 正規化 payloadJsonTree（純資料 → 排序 + 去重 + 乾淨 children）
+function formatJsonTree(tree) {
+  // 預期輸入為 [{ key, path, type: string[], count?: number, children?: [] }, ...]
+  if (!Array.isArray(tree)) return [];
+  const normalizeNode = (n) => {
+    if (!n || typeof n !== 'object') return null;
+    const key = typeof n.key === 'string' ? n.key : (n.key != null ? String(n.key) : '');
+    const path = typeof n.path === 'string' ? n.path : (n.path != null ? String(n.path) : '');
+    // type: 去重並排序
+    const typeArr = Array.isArray(n.type) ? Array.from(new Set(n.type.map((t)=>String(t)))) : [];
+    let children = Array.isArray(n.children) ? n.children.map(normalizeNode).filter(Boolean) : [];
+    // 依 key 排序，將 '*' 放到最後
+    children.sort((a,b)=> (a.key==='*') - (b.key==='*') || a.key.localeCompare(b.key));
+    const out = { key, path, type: typeArr.sort() };
+    if (typeof n.count === 'number' && Number.isFinite(n.count)) out.count = n.count;
+    if (children.length) out.children = children;
+    return out;
+  };
+  const roots = tree.map(normalizeNode).filter(Boolean);
+  roots.sort((a,b)=> (a.key==='*') - (b.key==='*') || a.key.localeCompare(b.key));
+  return roots;
+}
+
 // Helper function to get time range filter from UI
 function getTimeRangeFilter() {
   const startVal = document.getElementById('startDate')?.value;
@@ -1426,6 +1449,11 @@ function initializeTableRelated() {
 
           // 顯示 Overlay
           document.getElementById('nodeOverlay').classList.remove('hidden');
+          // 預設 Parser 下拉回到 None（不觸發 change 事件，避免重建 analytics）
+          try {
+            const parserSel = document.getElementById('payloadParserType');
+            if (parserSel) parserSel.value = '';
+          } catch(_) {}
           // Populate Basic Info
           populateBasicInfo(devname, devaddr);
           // Populate Node DataTable with records related to this node
@@ -1534,6 +1562,32 @@ function initializeTableRelated() {
           if (window.destroyNodeParsedChart) {
             window.destroyNodeParsedChart();
           }
+
+          // 格式化 payloadJsonTree，避免之後互相影響（例如下拉層級選單的暫存引用）
+          try {
+            if (typeof window.getCurrentAnalytics === 'function') {
+              const analytics = window.getCurrentAnalytics();
+              if (analytics && Array.isArray(analytics.perNode)) {
+                analytics.perNode.forEach(n => {
+                  if (n && n.total && n.total.payloadJsonTree) {
+                    n.total.payloadJsonTree = formatJsonTree(n.total.payloadJsonTree);
+                  }
+                });
+              }
+            }
+          } catch (e) {
+            console.warn('[Overlay] format payloadJsonTree on close failed:', e);
+          }
+
+          // 將三個 path-picker 重設為初始提示，避免殘留舊的 select 與事件監聽器
+          try {
+            const placeholderHtml = '<span style="color:#888; font-style:italic;">請先選擇 Parser 類型</span>';
+            const ids = ['payloadPathPicker1','payloadPathPicker2','payloadPathPicker3'];
+            ids.forEach(id => { const el = document.getElementById(id); if (el) el.innerHTML = placeholderHtml; });
+            // 清空對應的 hidden inputs，避免舊路徑回填干擾新層級建構
+            const inputIds = ['payloadParserJsonPath','payloadParserJsonPath2','payloadParserJsonPath3'];
+            inputIds.forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+          } catch(_) {}
       }
   });
 
@@ -1622,6 +1676,23 @@ function initializeTableRelated() {
 
 // 以 payloadJsonTree 建立階層式下拉：支援三條路徑，各自獨立
 function buildPayloadPathPickers(devname, devaddr) {
+  const placeholderHtml = '<span style="color:#888; font-style:italic;">請先選擇 Parser 類型</span>';
+  // 當 Parser 尚未選擇（None）時，直接回到初始提示狀態
+  try {
+    const parserSel = document.getElementById('payloadParserType');
+    const parserType = (parserSel?.value || '').trim().toLowerCase();
+    if (!parserType) {
+      const ids = ['payloadPathPicker1', 'payloadPathPicker2', 'payloadPathPicker3'];
+      ids.forEach(id => { const el = document.getElementById(id); if (el) el.innerHTML = placeholderHtml; });
+      const inputIds = ['payloadParserJsonPath','payloadParserJsonPath2','payloadParserJsonPath3'];
+      inputIds.forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+      const errEl = document.getElementById('payloadParserError');
+      if (errEl) { errEl.style.display = 'none'; errEl.textContent = ''; }
+      const stEl = document.getElementById('payloadParserStatus');
+      if (stEl) stEl.textContent = '';
+      return;
+    }
+  } catch (_) { /* ignore */ }
   const analytics = (typeof window.getCurrentAnalytics === 'function') ? window.getCurrentAnalytics() : null;
   const pickers = [
     { wrapperId: 'payloadPathPicker1', inputId: 'payloadParserJsonPath' },
