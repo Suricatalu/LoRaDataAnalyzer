@@ -347,7 +347,8 @@ function parseCSVRaw(csvText, opts = {}) {
       if (opts.onRowError) opts.onRowError(i + 1, (err && err.message) || 'Unknown row error');
     }
   }
-  records.reverse(); // 使較舊的記錄在前面
+  // 按時間排序：從舊到新（確保時間順序正確，不依賴 CSV 原始順序）
+  records.sort((a, b) => a.Time - b.Time);
   console.log("Raw Records:", records);
   return records;
 }
