@@ -57,7 +57,7 @@ function ensureExpectedLinePluginRegistered() {
       const ctx = chart.ctx;
       ctx.save();
       // 畫虛線（全寬）
-      ctx.setLineDash([6,6]);
+      ctx.setLineDash([6, 6]);
       ctx.lineWidth = 2;
       ctx.strokeStyle = 'rgba(255,255,255,0.6)';
       ctx.beginPath();
@@ -70,16 +70,16 @@ function ensureExpectedLinePluginRegistered() {
       ctx.font = '12px sans-serif';
       ctx.textBaseline = 'middle';
       const textWidth = ctx.measureText(label).width;
-  const chartWidth = right - left;
-  let textX = left + (chartWidth - textWidth) / 2; // 水平置中
-  textX = Math.max(left + 4, Math.min(textX, right - textWidth - 4)); // 邊界保護
-  let textY = y - 10; // 預設線上方
+      const chartWidth = right - left;
+      let textX = left + (chartWidth - textWidth) / 2; // 水平置中
+      textX = Math.max(left + 4, Math.min(textX, right - textWidth - 4)); // 邊界保護
+      let textY = y - 10; // 預設線上方
       // 若接近頂部則放到線下方
       if (textY < (top + 12)) textY = y + 12;
       // 背景框
       const paddingX = 4, paddingY = 3;
       ctx.fillStyle = 'rgba(0,0,0,0.55)';
-      ctx.fillRect(textX - paddingX, textY - (10/2) - paddingY, textWidth + paddingX*2, 10 + paddingY*2);
+      ctx.fillRect(textX - paddingX, textY - (10 / 2) - paddingY, textWidth + paddingX * 2, 10 + paddingY * 2);
       // 文字
       ctx.fillStyle = 'rgba(255,255,255,0.95)';
       ctx.fillText(label, textX, textY);
@@ -120,10 +120,10 @@ function ensureGapOverlayPluginRegistered() {
         const clampedRight = Math.min(right, area.right);
         if (clampedRight - clampedLeft < 2) return;
         // 填滿區域
-  ctx.fillStyle = 'rgba(80,170,255,0.18)'; // 淺藍色半透明 (GAP 區段)
-  ctx.fillRect(clampedLeft, area.top, clampedRight - clampedLeft, area.bottom - area.top);
-  // 邊界線
-  ctx.strokeStyle = 'rgba(80,170,255,0.65)';
+        ctx.fillStyle = 'rgba(255,105,180,0.18)'; // 粉紅色半透明 (GAP 區段)
+        ctx.fillRect(clampedLeft, area.top, clampedRight - clampedLeft, area.bottom - area.top);
+        // 邊界線
+        ctx.strokeStyle = 'rgba(255,105,180,0.65)';
         ctx.lineWidth = 1;
         ctx.beginPath();
         ctx.moveTo(clampedLeft, area.top);
@@ -176,7 +176,7 @@ function renderGapTimelineChart(node) {
       if (tf && tf.start instanceof Date && !isNaN(tf.start.getTime())) rangeStart = tf.start.getTime();
       if (tf && tf.end instanceof Date && !isNaN(tf.end.getTime())) rangeEnd = tf.end.getTime();
     }
-  } catch(e) { console.warn('[GapTimeline] getTimeRangeFilter failed', e); }
+  } catch (e) { console.warn('[GapTimeline] getTimeRangeFilter failed', e); }
   // 若未指定則由 gaps 計算
   if (rangeStart == null) rangeStart = Math.min(...gaps.map(g => g.start));
   if (rangeEnd == null) rangeEnd = Math.max(...gaps.map(g => g.end));
@@ -186,92 +186,92 @@ function renderGapTimelineChart(node) {
   const ctx = container.getContext('2d');
   nodeGapTimelineChart = new Chart(ctx, {
     type: 'scatter',
-    data: { 
-      datasets: [{ 
-        label: 'GapSpan', 
-        data: gaps.map((g,i) => ({ x: (g.start+g.end)/2, y: 0, _gap:g, _idx:i })), 
-        pointRadius:0, 
-        pointHitRadius:12, 
-        pointHoverRadius:4, 
-        showLine:false 
+    data: {
+      datasets: [{
+        label: 'GapSpan',
+        data: gaps.map((g, i) => ({ x: (g.start + g.end) / 2, y: 0, _gap: g, _idx: i })),
+        pointRadius: 0,
+        pointHitRadius: 12,
+        pointHoverRadius: 4,
+        showLine: false
       }]
     },
     options: {
-      responsive:true, 
-      maintainAspectRatio:false,
-      scales:{
-        x:{ 
-          type:'linear', 
-          min: rangeStart, 
-          max: rangeEnd, 
-          ticks:{ 
-            color:'#fff', 
-            callback:(v)=> { 
-              const d=new Date(v); 
-              return d.toLocaleString('zh-TW',{month:'2-digit',day:'2-digit',hour:'2-digit'}); 
-            } 
-          }, 
-          grid:{ color:'rgba(255,255,255,0.15)'} 
+      responsive: true,
+      maintainAspectRatio: false,
+      scales: {
+        x: {
+          type: 'linear',
+          min: rangeStart,
+          max: rangeEnd,
+          ticks: {
+            color: '#fff',
+            callback: (v) => {
+              const d = new Date(v);
+              return d.toLocaleString('zh-TW', { month: '2-digit', day: '2-digit', hour: '2-digit' });
+            }
+          },
+          grid: { color: 'rgba(255,255,255,0.15)' }
         },
-        y:{ display:false }
+        y: { display: false }
       },
-      plugins:{ 
-        legend:{display:false}, 
-        title:{ 
-          display:true, 
-          text:'GAP 時間軸 (No Data Gap Timeline)', 
-          color:'#fff', 
-          font:{ size:14 }
+      plugins: {
+        legend: { display: false },
+        title: {
+          display: true,
+          text: 'GAP 時間軸 (No Data Gap Timeline)',
+          color: '#fff',
+          font: { size: 14 }
         },
-        tooltip:{ 
-          callbacks:{ 
-            title:items=> { 
-              const r=items && items[0] && items[0].raw; 
-              return r && r._idx!=null ? `Gap #${r._idx+1}` : 'Gap'; 
-            }, 
-            label:c=> { 
-              const g=c.raw._gap; 
-              const minutes=(g.end-g.start)/60000; 
-              const dur=formatGapMinutes(minutes); 
-              const human = minutes>=60 ? ` (${formatGapHuman(minutes)})` : ''; 
+        tooltip: {
+          callbacks: {
+            title: items => {
+              const r = items && items[0] && items[0].raw;
+              return r && r._idx != null ? `Gap #${r._idx + 1}` : 'Gap';
+            },
+            label: c => {
+              const g = c.raw._gap;
+              const minutes = (g.end - g.start) / 60000;
+              const dur = formatGapMinutes(minutes);
+              const human = minutes >= 60 ? ` (${formatGapHuman(minutes)})` : '';
               return [
-                `開始: ${new Date(g.start).toLocaleString()}` ,
+                `開始: ${new Date(g.start).toLocaleString()}`,
                 `結束: ${new Date(g.end).toLocaleString()}`,
                 `時長: ${dur} 分${human}`
-              ]; 
-            } 
-          } 
-        } 
+              ];
+            }
+          }
+        }
       }
     },
-    plugins:[{
-      id:'gapSpanDrawer',
-      afterDatasetsDraw(chart){
-        const {ctx} = chart; const xScale=chart.scales.x; if(!xScale) return; const area=chart.chartArea;
+    plugins: [{
+      id: 'gapSpanDrawer',
+      afterDatasetsDraw(chart) {
+        const { ctx } = chart; const xScale = chart.scales.x; if (!xScale) return; const area = chart.chartArea;
         const height = area.bottom - area.top - 12; const yTop = area.top + 6;
-        chart.data.datasets[0].data.forEach(pt=>{ 
-          const g=pt._gap; 
-          if(!g) return; 
-          const left=xScale.getPixelForValue(g.start); 
-          const right=xScale.getPixelForValue(g.end); 
-          if(right<area.left||left>area.right) return; 
-          const L=Math.max(left,area.left); 
-          const R=Math.min(right,area.right); 
-          ctx.save(); 
-          ctx.fillStyle='rgba(80,170,255,0.35)'; 
-          ctx.strokeStyle='rgba(80,170,255,0.9)'; 
-          ctx.fillRect(L,yTop,R-L,height); 
-          ctx.strokeRect(L,yTop,R-L,height); 
-          if(R-L>52){ 
-            const minutes=(g.end-g.start)/60000; 
-            const dur=formatGapMinutes(minutes)+'m'; 
-            ctx.font='12px sans-serif'; 
+        chart.data.datasets[0].data.forEach(pt => {
+          const g = pt._gap;
+          if (!g) return;
+          const left = xScale.getPixelForValue(g.start);
+          const right = xScale.getPixelForValue(g.end);
+          if (right < area.left || left > area.right) return;
+          const L = Math.max(left, area.left);
+          const R = Math.min(right, area.right);
+          ctx.save();
+          ctx.fillStyle = 'rgba(255,105,180,0.35)';
+          ctx.strokeStyle = 'rgba(255,105,180,0.9)';
+          ctx.fillRect(L, yTop, R - L, height);
+          ctx.strokeRect(L, yTop, R - L, height);
+          if (R - L > 52) {
+            const minutes = (g.end - g.start) / 60000;
+            const dur = formatGapMinutes(minutes) + 'm';
+            ctx.font = '12px sans-serif';
             // 改為白色字體以提升在藍色背景上的可讀性
-            ctx.fillStyle='#ffffff'; 
-            const tw=ctx.measureText(dur).width; 
-            if(tw < R-L-8) ctx.fillText(dur, L+(R-L-tw)/2, yTop+height/2+4);
-          } 
-          ctx.restore(); 
+            ctx.fillStyle = '#ffffff';
+            const tw = ctx.measureText(dur).width;
+            if (tw < R - L - 8) ctx.fillText(dur, L + (R - L - tw) / 2, yTop + height / 2 + 4);
+          }
+          ctx.restore();
         });
       }
     }]
@@ -280,11 +280,11 @@ function renderGapTimelineChart(node) {
   try {
     const wrapper = container.closest('.node-chart-wrapper');
     if (wrapper) {
-      const targetH = Math.max(100, Math.round(380/3));
+      const targetH = Math.max(100, Math.round(380 / 3));
       wrapper.style.height = targetH + 'px';
       wrapper.style.minHeight = targetH + 'px';
     }
-  } catch(e) { /* ignore */ }
+  } catch (e) { /* ignore */ }
 }
 
 // 3) 每日最大 GAP 柱狀 (x=日期)
@@ -297,7 +297,7 @@ function renderDailyGapBarChart(node) {
   }
   // 取得使用者設定的時間區間 (startDate/endDate) 以限制 x 軸顯示範圍
   let timeFilter = {};
-  try { if (window.getTimeRangeFilter) timeFilter = window.getTimeRangeFilter() || {}; } catch(e) { /* ignore */ }
+  try { if (window.getTimeRangeFilter) timeFilter = window.getTimeRangeFilter() || {}; } catch (e) { /* ignore */ }
   const startMs = timeFilter.start instanceof Date && !isNaN(timeFilter.start) ? timeFilter.start.getTime() : null;
   const endMs = timeFilter.end instanceof Date && !isNaN(timeFilter.end) ? timeFilter.end.getTime() : null;
 
@@ -318,22 +318,22 @@ function renderDailyGapBarChart(node) {
     dayPairs.push({ date: day.date, value: rawVal });
   });
   // 依日期排序 (確保 x 軸順序一致)
-  dayPairs.sort((a,b) => a.date.localeCompare(b.date));
+  dayPairs.sort((a, b) => a.date.localeCompare(b.date));
   const labels = dayPairs.map(p => p.date);
   const values = dayPairs.map(p => p.value);
-  if (!labels.length) { if (nodeDailyGapBarChart) { nodeDailyGapBarChart.destroy(); nodeDailyGapBarChart=null; } return; }
+  if (!labels.length) { if (nodeDailyGapBarChart) { nodeDailyGapBarChart.destroy(); nodeDailyGapBarChart = null; } return; }
   if (nodeDailyGapBarChart) nodeDailyGapBarChart.destroy();
   const ctx = canvas.getContext('2d');
   nodeDailyGapBarChart = new Chart(ctx, {
     type: 'bar',
-  data: { labels, datasets: [{ label: '每日最大 GAP (分鐘)', data: values, backgroundColor: 'rgba(80,170,255,0.45)', borderColor:'rgba(80,170,255,0.9)', borderWidth:1, borderRadius:4 }]},
+    data: { labels, datasets: [{ label: '每日最大 GAP (分鐘)', data: values, backgroundColor: 'rgba(255,105,180,0.45)', borderColor: 'rgba(255,105,180,0.9)', borderWidth: 1, borderRadius: 4 }] },
     options: {
-      responsive:true,
-      maintainAspectRatio:false,
-      plugins:{ legend:{ display:false }, tooltip:{ callbacks:{ label: c => `最大 GAP: ${formatGapMinutes(c.parsed.y)} 分` } }, title:{ display:true, text:'Daily Max No Data Gap', color:'#fff' }},
-      scales:{
-        x:{ ticks:{ color:'#fff' }, grid:{ color:'rgba(255,255,255,0.1)' }},
-        y:{ beginAtZero:true, ticks:{ color:'#fff', callback:v=> formatGapMinutes(v) }, grid:{ color:'rgba(255,255,255,0.1)' }, title:{ display:true, text:'分鐘', color:'#fff' }}
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => `最大 GAP: ${formatGapMinutes(c.parsed.y)} 分` } }, title: { display: true, text: 'Daily Max No Data Gap', color: '#fff' } },
+      scales: {
+        x: { ticks: { color: '#fff' }, grid: { color: 'rgba(255,255,255,0.1)' } },
+        y: { beginAtZero: true, ticks: { color: '#fff', callback: v => formatGapMinutes(v) }, grid: { color: 'rgba(255,255,255,0.1)' }, title: { display: true, text: '分鐘', color: '#fff' } }
       }
     }
   });
@@ -353,7 +353,7 @@ function renderGapSummary(node) {
   const parts = [];
   parts.push(`<div class="gap-badge">Threshold: ${thr}m</div>`);
   parts.push(`<div class="gap-badge">Gaps: ${gapCnt}</div>`);
-  parts.push(`<div class="gap-badge">Max Gap: ${maxGap > -1 ? formatGapMinutes(maxGap)+'m' : '-'}</div>`);
+  parts.push(`<div class="gap-badge">Max Gap: ${maxGap > -1 ? formatGapMinutes(maxGap) + 'm' : '-'}</div>`);
   if (node.daily) {
     const fullDays = node.daily.filter(d => d.noData).length;
     if (fullDays) parts.push(`<div class="gap-badge" style="background:#a61e4d;">Full No-Data Days: ${fullDays}</div>`);
@@ -373,13 +373,13 @@ function applyGapOverlayToTimeSeriesChart(node) {
   ensureGapOverlayPluginRegistered();
   if (!window.nodeTimeSeriesChart && window.getNodeTimeSeriesChart) {
     // 提供取 chart 的方法（未實作則略過）
-    try { window.nodeTimeSeriesChart = window.getNodeTimeSeriesChart(); } catch(e) {}
+    try { window.nodeTimeSeriesChart = window.getNodeTimeSeriesChart(); } catch (e) { }
   }
   const chart = window.nodeTimeSeriesChart;
   if (!chart) return;
   let segments = [];
   if (node && node.total && Array.isArray(node.total.lossGapTime)) {
-    segments = node.total.lossGapTime.map(([s,e]) => [new Date(s).getTime(), new Date(e).getTime()])
+    segments = node.total.lossGapTime.map(([s, e]) => [new Date(s).getTime(), new Date(e).getTime()])
       .filter(p => !isNaN(p[0]) && !isNaN(p[1]));
   }
   chart.$gapSegments = segments;
@@ -404,8 +404,8 @@ function renderBarChart(analytics) {
     destroyChart();
     return;
   }
-  
-  const list = analytics.threshold.list.slice().sort((a,b)=> a.date.localeCompare(b.date));
+
+  const list = analytics.threshold.list.slice().sort((a, b) => a.date.localeCompare(b.date));
   const labels = list.map(d => d.date);
   const normal = list.map(d => d.normalcnt);
   const abnormal = list.map(d => d.abnormalcnt);
@@ -426,18 +426,18 @@ function renderBarChart(analytics) {
     const totalNormalDevices = new Set();
     const totalAbnormalDevices = new Set();
     const totalExceptionDevices = new Set();
-    
+
     for (const day of list) {
       day.normal.forEach(device => totalNormalDevices.add(device));
       day.abnormal.forEach(device => totalAbnormalDevices.add(device));
       day.exception.forEach(device => totalExceptionDevices.add(device));
     }
-    
+
     totalNormal = totalNormalDevices.size;
     totalAbnormal = totalAbnormalDevices.size;
     totalException = totalExceptionDevices.size;
   }
-  
+
   labels.unshift('Total');
   normal.unshift(totalNormal);
   abnormal.unshift(totalAbnormal);
@@ -459,7 +459,7 @@ function renderBarChart(analytics) {
       responsive: true,
       maintainAspectRatio: false,
       plugins: {
-        title: { display: true},
+        title: { display: true },
         legend: { position: 'top' }
       },
       scales: {
@@ -534,56 +534,56 @@ function createNodeUpFreqChart(devname, devaddr) {
     console.warn('[Chart] No getCurrentAnalytics function available');
     return;
   }
-  
+
   const analytics = window.getCurrentAnalytics();
   if (!analytics || !analytics.perNode) {
     console.warn('[Chart] No analytics data available');
     return;
   }
-  
+
   // 尋找對應的節點資料
-  const node = analytics.perNode.find(n => 
-    (n.id.devName && n.id.devName === devname) || 
+  const node = analytics.perNode.find(n =>
+    (n.id.devName && n.id.devName === devname) ||
     (n.id.devAddr && n.id.devAddr === devaddr)
   );
-  
+
   if (!node) {
     console.warn('[Chart] Node not found in analytics:', devname, devaddr);
     return;
   }
-  
+
   // 取得頻率統計資料
   const frequencyCounts = node.total.frequencyCounts;
-  
+
   if (!frequencyCounts) {
     console.warn('[Chart] No frequency data available for node:', devname);
     showUpFreqChartEmptyState();
     return;
   }
-  
+
   // 取得全域頻率基準 - 確保所有節點圖表使用相同的 x 軸
   const globalFrequencies = analytics.global.total.frequenciesUsed;
-  
+
   if (!globalFrequencies || globalFrequencies.length === 0) {
     console.warn('[Chart] No global frequencies available');
     showUpFreqChartEmptyState();
     return;
   }
-  
+
   // 準備圖表資料 - 顯示所有全域頻率，包括該節點未使用的（顯示為 0）
   const labels = [];
   const data = [];
   const backgroundColors = [];
   const borderColors = [];
-  
+
   // 為每個全域頻率產生資料點
   globalFrequencies.forEach((freq, index) => {
     const freqKey = String(freq); // 轉換為字串作為 key
     const count = frequencyCounts[freqKey] || 0; // 未使用的頻率顯示為 0
-    
+
     labels.push(`${freq} MHz`);
     data.push(count);
-    
+
     // 使用單一色系，區分有使用和未使用的頻率
     if (count > 0) {
       // 有使用的頻率：藍色系
@@ -595,26 +595,26 @@ function createNodeUpFreqChart(devname, devaddr) {
       borderColors.push('rgba(150, 150, 150, 0.6)');
     }
   });
-  
+
   if (globalFrequencies.length === 0) {
     console.warn('[Chart] No frequency data to display');
     showUpFreqChartEmptyState();
     return;
   }
-  
+
   // 銷毀現有圖表
   if (nodeUpFreqChart) {
     nodeUpFreqChart.destroy();
     nodeUpFreqChart = null;
   }
-  
+
   // 取得 canvas 元素
   const ctx = document.getElementById('nodeUpFreqBarChart');
   if (!ctx) {
     console.error('[Chart] Frequency chart canvas not found');
     return;
   }
-  
+
   // 建立新的柱狀圖
   nodeUpFreqChart = new Chart(ctx, {
     type: 'bar',
@@ -650,12 +650,12 @@ function createNodeUpFreqChart(devname, devaddr) {
           borderColor: 'rgba(255, 255, 255, 0.3)',
           borderWidth: 1,
           callbacks: {
-            label: function(context) {
+            label: function (context) {
               const total = data.reduce((sum, val) => sum + val, 0);
               const count = context.parsed.y;
               const percentage = total > 0 ? ((count / total) * 100).toFixed(1) : '0.0';
               const frequency = labels[context.dataIndex].replace(' MHz', '');
-              
+
               if (count === 0) {
                 return [
                   `頻率: ${frequency} MHz`,
@@ -699,7 +699,7 @@ function createNodeUpFreqChart(devname, devaddr) {
             color: '#fff',
             beginAtZero: true,
             precision: 0, // 整數顯示
-            callback: function(value) {
+            callback: function (value) {
               return Number.isInteger(value) ? value : '';
             }
           },
@@ -708,7 +708,7 @@ function createNodeUpFreqChart(devname, devaddr) {
           }
         }
       },
-      onClick: function(evt, elements) {
+      onClick: function (evt, elements) {
         if (elements.length > 0) {
           const element = elements[0];
           const frequency = labels[element.index].replace(' MHz', '');
@@ -718,7 +718,7 @@ function createNodeUpFreqChart(devname, devaddr) {
       }
     }
   });
-  
+
 }
 
 /**
@@ -732,35 +732,35 @@ function updateNodeUpFreqChart(devname, devaddr) {
     createNodeUpFreqChart(devname, devaddr);
     return;
   }
-  
+
   console.log('[Chart] Updating frequency chart for', devname, devaddr);
-  
+
   // 取得目前的 analytics 資料
   if (!window.getCurrentAnalytics) {
     console.warn('[Chart] No getCurrentAnalytics function available');
     return;
   }
-  
+
   const analytics = window.getCurrentAnalytics();
   if (!analytics || !analytics.perNode) {
     console.warn('[Chart] No analytics data available');
     return;
   }
-  
+
   // 尋找對應的節點資料
-  const node = analytics.perNode.find(n => 
-    (n.id.devName && n.id.devName === devname) || 
+  const node = analytics.perNode.find(n =>
+    (n.id.devName && n.id.devName === devname) ||
     (n.id.devAddr && n.id.devAddr === devaddr)
   );
-  
+
   if (!node) {
     console.warn('[Chart] Node not found in analytics:', devname, devaddr);
     return;
   }
-  
+
   // 取得頻率統計資料
   const frequencyCounts = node.total.frequencyCounts;
-  
+
   if (!frequencyCounts) {
     console.warn('[Chart] No frequency data available for node:', devname);
     // 清空圖表
@@ -771,10 +771,10 @@ function updateNodeUpFreqChart(devname, devaddr) {
     nodeUpFreqChart.update();
     return;
   }
-  
+
   // 取得全域頻率基準 - 確保所有節點圖表使用相同的 x 軸
   const globalFrequencies = analytics.global.total.frequenciesUsed;
-  
+
   if (!globalFrequencies || globalFrequencies.length === 0) {
     console.warn('[Chart] No global frequencies available');
     // 清空圖表
@@ -785,21 +785,21 @@ function updateNodeUpFreqChart(devname, devaddr) {
     nodeUpFreqChart.update();
     return;
   }
-  
+
   // 準備圖表資料 - 顯示所有全域頻率，包括該節點未使用的（顯示為 0）
   const labels = [];
   const data = [];
   const backgroundColors = [];
   const borderColors = [];
-  
+
   // 為每個全域頻率產生資料點
   globalFrequencies.forEach((freq, index) => {
     const freqKey = String(freq); // 轉換為字串作為 key
     const count = frequencyCounts[freqKey] || 0; // 未使用的頻率顯示為 0
-    
+
     labels.push(`${freq} MHz`);
     data.push(count);
-    
+
     // 使用單一色系，區分有使用和未使用的頻率
     if (count > 0) {
       // 有使用的頻率：藍色系
@@ -811,19 +811,19 @@ function updateNodeUpFreqChart(devname, devaddr) {
       borderColors.push('rgba(150, 150, 150, 0.6)');
     }
   });
-  
+
   // 更新圖表資料
   nodeUpFreqChart.data.labels = labels;
   nodeUpFreqChart.data.datasets[0].data = data;
   nodeUpFreqChart.data.datasets[0].backgroundColor = backgroundColors;
   nodeUpFreqChart.data.datasets[0].borderColor = borderColors;
-  
+
   // 更新圖表標題
   nodeUpFreqChart.options.plugins.title.text = `${devname} - 上行頻率使用分布`;
-  
+
   // 應用更新
   nodeUpFreqChart.update();
-  
+
   console.log(`[Chart] Updated frequency chart with ${globalFrequencies.length} frequency bands`);
 }
 
@@ -895,53 +895,53 @@ function createNodeGwBarChart(devname, devaddr) {
       // 正規化設備名稱和地址用於比較
       const devnameKey = (devname || '').toString().trim().toLowerCase();
       const devaddrKey = (devaddr || '').toString().trim().toLowerCase();
-      
+
       // 尋找對應的節點統計
       const nodeStats = analytics.perNode.find(node => {
         const nDevName = (node.id.devName || '').toString().trim().toLowerCase();
         const nDevAddr = (node.id.devAddr || '').toString().trim().toLowerCase();
-        return nDevName === devnameKey || nDevAddr === devaddrKey || 
-               nDevName === devaddrKey || nDevAddr === devnameKey;
+        return nDevName === devnameKey || nDevAddr === devaddrKey ||
+          nDevName === devaddrKey || nDevAddr === devnameKey;
       });
-      
+
       if (nodeStats && nodeStats.total && nodeStats.total.gatewayCounts) {
         // 從 analytics 數據中獲取 gateway 統計
         const gatewayCounts = nodeStats.total.gatewayCounts;
         const gatewayCount = new Map();
-        
+
         // 轉換 gatewayCounts 對象為 Map
         for (const [gateway, count] of Object.entries(gatewayCounts)) {
           if (count > 0) {
             gatewayCount.set(gateway, count);
           }
         }
-        
+
         if (gatewayCount.size === 0) {
           showGwBarChartEmptyState();
           return;
         }
-        
+
         // 使用 analytics 數據創建圖表
-  createGatewayBarChartFromData(devname, devaddr, gatewayCount, nodeStats.total.totalWithDuplicates);
+        createGatewayBarChartFromData(devname, devaddr, gatewayCount, nodeStats.total.totalWithDuplicates);
         return;
       }
     }
   }
-  
+
   // 回退到原始記錄資料處理（保持兼容性）
   console.log('[Chart] Falling back to raw records processing');
-  
+
   if (!window.getRawRecords) {
     console.warn('[Chart] No getRawRecords function available');
     return;
   }
-  
+
   const rawRecords = window.getRawRecords() || [];
-  
+
   // 正規化設備名稱和地址用於比較
   const devnameKey = (devname || '').toString().trim().toLowerCase();
   const devaddrKey = (devaddr || '').toString().trim().toLowerCase();
-  
+
   // flexible field getter: 嘗試多種可能的鍵值（不區分大小寫）
   function getField(obj, ...keys) {
     if (!obj) return undefined;
@@ -957,29 +957,29 @@ function createNodeGwBarChart(devname, devaddr) {
     }
     return undefined;
   }
-  
+
   // 篩選該節點的記錄
   const filteredRecords = rawRecords.filter(r => {
     const rn = (getField(r, 'Devname', 'DevName', 'Device Name') || '').toString().trim().toLowerCase();
     const ra = (getField(r, 'Devaddr', 'DevAddr') || '').toString().trim().toLowerCase();
     return rn === devnameKey || ra === devaddrKey || rn === devaddrKey || ra === devnameKey;
   });
-  
+
   console.log(`[Chart] Found ${filteredRecords.length} records for ${devname}`);
-  
+
   if (filteredRecords.length === 0) {
-  showGwBarChartEmptyState();
+    showGwBarChartEmptyState();
     return;
   }
-  
+
   // 從 MAC 欄位提取接收器資訊
   const gatewayCount = new Map(); // Map<gateway, count>
   const perGatewaySeenMsg = new Map(); // Map<gateway, Set<msgId>> 避免重複計數
-  
+
   filteredRecords.forEach(record => {
     // 取得 MAC 欄位（可能是陣列或字串）
     let mac = getField(record, 'Mac', 'MAC', 'DevEUI') || '';
-    
+
     // 如果是陣列，轉換為字串陣列
     let macArray = [];
     if (Array.isArray(mac)) {
@@ -988,21 +988,21 @@ function createNodeGwBarChart(devname, devaddr) {
       // 如果是字串，按換行符號分割
       macArray = mac.split('\n').map(m => m.trim()).filter(m => m);
     }
-    
+
     // 取得 FCnt 作為訊息 ID
     const fcnt = getField(record, 'Fcnt', 'FCnt');
     const msgId = fcnt ? `${devaddr}_${fcnt}` : `${devaddr}_${Date.now()}_${Math.random()}`;
-    
+
     // 為每個接收器（MAC）增加計數
     macArray.forEach(gatewayMac => {
       if (!gatewayMac) return;
-      
+
       // 確保接收器存在於 Map 中
       if (!gatewayCount.has(gatewayMac)) {
         gatewayCount.set(gatewayMac, 0);
         perGatewaySeenMsg.set(gatewayMac, new Set());
       }
-      
+
       // 避免同一接收器對同一訊息重複計數
       const seen = perGatewaySeenMsg.get(gatewayMac);
       if (!seen.has(msgId)) {
@@ -1011,12 +1011,12 @@ function createNodeGwBarChart(devname, devaddr) {
       }
     });
   });
-  
+
   if (gatewayCount.size === 0) {
-  showGwBarChartEmptyState();
+    showGwBarChartEmptyState();
     return;
   }
-  
+
   // 使用原始數據創建圖表（計算總數）
   const totalWithDuplicates = filteredRecords.length;
   createGatewayBarChartFromData(devname, devaddr, gatewayCount, totalWithDuplicates);
@@ -1104,7 +1104,7 @@ function createGatewayBarChartFromData(devname, devaddr, gatewayCount, totalWith
           titleColor: '#fff',
           bodyColor: '#fff',
           borderColor: 'rgba(255,255,255,0.4)',
-            borderWidth: 1,
+          borderWidth: 1,
           callbacks: {
             title: ctx => {
               if (!ctx.length) return '';
@@ -1178,9 +1178,9 @@ function updateNodeGwBarChart(devname, devaddr) {
     createNodeGwBarChart(devname, devaddr);
     return;
   }
-  
+
   console.log('[Chart] Updating gateway bar chart for', devname, devaddr);
-  
+
   // 優先使用 analytics 數據結構
   if (window.getCurrentAnalytics) {
     const analytics = window.getCurrentAnalytics();
@@ -1188,27 +1188,27 @@ function updateNodeGwBarChart(devname, devaddr) {
       // 正規化設備名稱和地址用於比較
       const devnameKey = (devname || '').toString().trim().toLowerCase();
       const devaddrKey = (devaddr || '').toString().trim().toLowerCase();
-      
+
       // 尋找對應的節點統計
       const nodeStats = analytics.perNode.find(node => {
         const nDevName = (node.id.devName || '').toString().trim().toLowerCase();
         const nDevAddr = (node.id.devAddr || '').toString().trim().toLowerCase();
-        return nDevName === devnameKey || nDevAddr === devaddrKey || 
-               nDevName === devaddrKey || nDevAddr === devnameKey;
+        return nDevName === devnameKey || nDevAddr === devaddrKey ||
+          nDevName === devaddrKey || nDevAddr === devnameKey;
       });
-      
+
       if (nodeStats && nodeStats.total && nodeStats.total.gatewayCounts) {
         // 從 analytics 數據中獲取 gateway 統計
         const gatewayCounts = nodeStats.total.gatewayCounts;
         const gatewayCount = new Map();
-        
+
         // 轉換 gatewayCounts 對象為 Map
         for (const [gateway, count] of Object.entries(gatewayCounts)) {
           if (count > 0) {
             gatewayCount.set(gateway, count);
           }
         }
-        
+
         if (gatewayCount.size === 0) {
           // 如果沒有接收器資料，清空圖表
           nodeGwBarChart.data.labels = [];
@@ -1217,28 +1217,28 @@ function updateNodeGwBarChart(devname, devaddr) {
           nodeGwBarChart.update();
           return;
         }
-        
+
         // 使用 analytics 數據更新圖表
-  updateGatewayBarChartData(devname, devaddr, gatewayCount, nodeStats.total.totalWithDuplicates);
+        updateGatewayBarChartData(devname, devaddr, gatewayCount, nodeStats.total.totalWithDuplicates);
         return;
       }
     }
   }
-  
+
   // 回退到原始記錄資料處理（保持兼容性）
   console.log('[Chart] Falling back to raw records processing for update');
-  
+
   if (!window.getRawRecords) {
     console.warn('[Chart] No getRawRecords function available');
     return;
   }
-  
+
   const rawRecords = window.getRawRecords() || [];
-  
+
   // 正規化設備名稱和地址用於比較
   const devnameKey = (devname || '').toString().trim().toLowerCase();
   const devaddrKey = (devaddr || '').toString().trim().toLowerCase();
-  
+
   // flexible field getter: 嘗試多種可能的鍵值（不區分大小寫）
   function getField(obj, ...keys) {
     if (!obj) return undefined;
@@ -1254,33 +1254,33 @@ function updateNodeGwBarChart(devname, devaddr) {
     }
     return undefined;
   }
-  
+
   // 篩選該節點的記錄
   const filteredRecords = rawRecords.filter(r => {
     const rn = (getField(r, 'Devname', 'DevName', 'Device Name') || '').toString().trim().toLowerCase();
     const ra = (getField(r, 'Devaddr', 'DevAddr') || '').toString().trim().toLowerCase();
     return rn === devnameKey || ra === devaddrKey || rn === devaddrKey || ra === devnameKey;
   });
-  
+
   console.log(`[Chart] Found ${filteredRecords.length} records for ${devname} (update)`);
-  
+
   if (filteredRecords.length === 0) {
     // 如果沒有資料，清空圖表
-  nodeGwBarChart.data.labels = [];
-  nodeGwBarChart.data.datasets[0].data = [];
-  nodeGwBarChart.data.datasets[0].backgroundColor = [];
-  nodeGwBarChart.update();
+    nodeGwBarChart.data.labels = [];
+    nodeGwBarChart.data.datasets[0].data = [];
+    nodeGwBarChart.data.datasets[0].backgroundColor = [];
+    nodeGwBarChart.update();
     return;
   }
-  
+
   // 從 MAC 欄位提取接收器資訊
   const gatewayCount = new Map(); // Map<gateway, count>
   const perGatewaySeenMsg = new Map(); // Map<gateway, Set<msgId>> 避免重複計數
-  
+
   filteredRecords.forEach(record => {
     // 取得 MAC 欄位（可能是陣列或字串）
     let mac = getField(record, 'Mac', 'MAC', 'DevEUI') || '';
-    
+
     // 如果是陣列，轉換為字串陣列
     let macArray = [];
     if (Array.isArray(mac)) {
@@ -1289,21 +1289,21 @@ function updateNodeGwBarChart(devname, devaddr) {
       // 如果是字串，按換行符號分割
       macArray = mac.split('\n').map(m => m.trim()).filter(m => m);
     }
-    
+
     // 取得 FCnt 作為訊息 ID
     const fcnt = getField(record, 'Fcnt', 'FCnt');
     const msgId = fcnt ? `${devaddr}_${fcnt}` : `${devaddr}_${Date.now()}_${Math.random()}`;
-    
+
     // 為每個接收器（MAC）增加計數
     macArray.forEach(gatewayMac => {
       if (!gatewayMac) return;
-      
+
       // 確保接收器存在於 Map 中
       if (!gatewayCount.has(gatewayMac)) {
         gatewayCount.set(gatewayMac, 0);
         perGatewaySeenMsg.set(gatewayMac, new Set());
       }
-      
+
       // 避免同一接收器對同一訊息重複計數
       const seen = perGatewaySeenMsg.get(gatewayMac);
       if (!seen.has(msgId)) {
@@ -1312,16 +1312,16 @@ function updateNodeGwBarChart(devname, devaddr) {
       }
     });
   });
-  
+
   if (gatewayCount.size === 0) {
     // 如果沒有接收器資料，清空圖表
-  nodeGwBarChart.data.labels = [];
-  nodeGwBarChart.data.datasets[0].data = [];
-  nodeGwBarChart.data.datasets[0].backgroundColor = [];
-  nodeGwBarChart.update();
+    nodeGwBarChart.data.labels = [];
+    nodeGwBarChart.data.datasets[0].data = [];
+    nodeGwBarChart.data.datasets[0].backgroundColor = [];
+    nodeGwBarChart.update();
     return;
   }
-  
+
   // 使用原始數據更新圖表（計算總數）
   const totalWithDuplicates = filteredRecords.length;
   updateGatewayBarChartData(devname, devaddr, gatewayCount, totalWithDuplicates);
@@ -1337,7 +1337,7 @@ function updateNodeGwBarChart(devname, devaddr) {
 function updateGatewayBarChartData(devname, devaddr, gatewayCount, totalWithDuplicates) {
   ensureExpectedLinePluginRegistered();
   const gatewayEntries = Array.from(gatewayCount.entries()).sort((a, b) => b[1] - a[1]);
-  const labels = gatewayEntries.map(([gateway]) => gateway.length <= 24 ? gateway : gateway.slice(0,12)+'...'+gateway.slice(-8));
+  const labels = gatewayEntries.map(([gateway]) => gateway.length <= 24 ? gateway : gateway.slice(0, 12) + '...' + gateway.slice(-8));
   const data = gatewayEntries.map(e => e[1]);
   const maxVal = data.length ? Math.max(...data) : 1;
   const expectedTotal = totalWithDuplicates; // 應接收封包總數
@@ -1533,7 +1533,7 @@ function createNodeParsedChart(devname, devaddr) {
     }
 
     const seriesList = jsonPaths.map(p => ({ path: p, points: collectParsedSeriesForNode(devname, devaddr, parserType, p) }));
-    if (statusEl) statusEl.textContent = `系列: ${seriesList.length}，點數: ${seriesList.map(s=>s.points.length).join(' / ')}`;
+    if (statusEl) statusEl.textContent = `系列: ${seriesList.length}，點數: ${seriesList.map(s => s.points.length).join(' / ')}`;
     const anyPoints = seriesList.some(s => s.points.length);
     if (!anyPoints) {
       const wrapper = ctx.canvas.parentElement;
@@ -1598,7 +1598,7 @@ function createNodeParsedChart(devname, devaddr) {
             ticks: {
               color: '#fff',
               maxTicksLimit: 8,
-              callback: function(value) {
+              callback: function (value) {
                 const d = new Date(value);
                 if (isNaN(d.getTime())) return '';
                 return d.toLocaleString('zh-TW', {
@@ -1655,17 +1655,17 @@ function collectParsedSeriesForNode(devname, devaddr, parserType, jsonPath) {
     for (const k of keys) { const v = lower[k.toLowerCase()]; if (v != null) return v; }
     return undefined;
   };
-  const devnameKey = (devname||'').trim().toLowerCase();
-  const devaddrKey = (devaddr||'').trim().toLowerCase();
+  const devnameKey = (devname || '').trim().toLowerCase();
+  const devaddrKey = (devaddr || '').trim().toLowerCase();
   let filtered = recs.filter(r => {
-    const rn = (getField(r,'Devname','DevName','Device Name')||'').toString().trim().toLowerCase();
-    const ra = (getField(r,'Devaddr','DevAddr')||'').toString().trim().toLowerCase();
+    const rn = (getField(r, 'Devname', 'DevName', 'Device Name') || '').toString().trim().toLowerCase();
+    const ra = (getField(r, 'Devaddr', 'DevAddr') || '').toString().trim().toLowerCase();
     return rn === devnameKey || ra === devaddrKey || rn === devaddrKey || ra === devnameKey;
   });
   // 時間過濾
   if (timeFilter && (timeFilter.start || timeFilter.end)) {
     filtered = filtered.filter(r => {
-      const t = getField(r,'Time','Received');
+      const t = getField(r, 'Time', 'Received');
       const d = (t instanceof Date) ? t : new Date(t);
       if (isNaN(d)) return false;
       if (timeFilter.start && d < timeFilter.start) return false;
@@ -1675,7 +1675,7 @@ function collectParsedSeriesForNode(devname, devaddr, parserType, jsonPath) {
   }
   // 僅上行
   filtered = filtered.filter(r => {
-    const type = getField(r,'Type','FrameType','Frame Type');
+    const type = getField(r, 'Type', 'FrameType', 'Frame Type');
     return type && (type.toString().toLowerCase().includes('up') || (typeof type === 'object' && type.isUp));
   });
 
@@ -1688,12 +1688,12 @@ function collectParsedSeriesForNode(devname, devaddr, parserType, jsonPath) {
   }
   if (!ParserCtor) throw new Error('LoRaDataParser 未載入');
   const parser = new ParserCtor();
-  const fportGetter = r => getField(r,'Port');
+  const fportGetter = r => getField(r, 'Port');
 
   // 路徑取值工具（支援 dot 路徑）
   const pickByPath = (obj, path) => {
     if (!path) return undefined;
-    const segs = path.split('.').map(s=>s.trim()).filter(Boolean);
+    const segs = path.split('.').map(s => s.trim()).filter(Boolean);
     let cur = obj;
     for (let seg of segs) {
       // 支援像 'data[*]' 的片段：先取 'data' 屬性，再取第一個元素
@@ -1721,12 +1721,12 @@ function collectParsedSeriesForNode(devname, devaddr, parserType, jsonPath) {
   const points = [];
   // 逐筆解析
   for (const r of filtered) {
-    const hex = getField(r,'Data','Payload','Hex');
+    const hex = getField(r, 'Data', 'Payload', 'Hex');
     if (!hex || typeof hex !== 'string') continue;
     let parsed = null;
     try {
       if (parserType === 'wise') {
-        parsed = parser.parseWise(hex, { macAddress: getField(r,'DevEUI','Mac','MAC'), enableStorage:false });
+        parsed = parser.parseWise(hex, { macAddress: getField(r, 'DevEUI', 'Mac', 'MAC'), enableStorage: false });
       } else if (parserType === 'eva') {
         const fp = fportGetter(r);
         if (fp == null || fp === '') continue; // EVA 需要 fport
@@ -1735,7 +1735,7 @@ function collectParsedSeriesForNode(devname, devaddr, parserType, jsonPath) {
         // 取消自動解析：未指定 parserType 時不解析
         parsed = null;
       }
-    } catch(e) {
+    } catch (e) {
       // 單筆解析失敗忽略
       continue;
     }
@@ -1744,13 +1744,13 @@ function collectParsedSeriesForNode(devname, devaddr, parserType, jsonPath) {
     const value = jsonPath ? pickByPath(source, jsonPath) : undefined;
     const num = Number(value);
     if (value === undefined || !isFinite(num)) continue; // 僅繪出可數值化的值
-    const rawTime = getField(r,'Time','Received');
-    const d = (rawTime instanceof Date)? rawTime : new Date(rawTime);
+    const rawTime = getField(r, 'Time', 'Received');
+    const d = (rawTime instanceof Date) ? rawTime : new Date(rawTime);
     if (isNaN(d)) continue;
-    points.push({ ts: d.getTime(), value: num, fcnt: getField(r,'Fcnt','FCnt'), timeStr: d.toLocaleString('zh-TW'), port: getField(r,'Port') });
+    points.push({ ts: d.getTime(), value: num, fcnt: getField(r, 'Fcnt', 'FCnt'), timeStr: d.toLocaleString('zh-TW'), port: getField(r, 'Port') });
   }
   // 依時間排序
-  points.sort((a,b)=>a.ts-b.ts);
+  points.sort((a, b) => a.ts - b.ts);
   return points;
 }
 
