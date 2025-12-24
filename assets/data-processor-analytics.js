@@ -159,23 +159,38 @@
 
   function computeBasicNodeTotals(records) {
     // Minimal basic totals useful for UI. This does not implement full expected/loss logic.
-    const totalWithDuplicates = records.length;
-    const uniqueByFcnt = new Map();
+    // Modified: Calculate duplicates based on adjacent Fcnt (sorted by time) to handle resets correctly.
+    const sorted = records.slice().sort((a, b) => {
+      const ta = a && a.Time ? a.Time.getTime() : 0;
+      const tb = b && b.Time ? b.Time.getTime() : 0;
+      return ta - tb;
+    });
+
+    const totalWithDuplicates = sorted.length;
+    let duplicatePackets = 0;
+    let prevFcnt = null;
     let rssiSum = 0,
       rssiCount = 0,
       snrSum = 0,
       snrCount = 0;
-    for (const r of records) {
-      if (r && r.Fcnt != null) uniqueByFcnt.set(r.Fcnt, (uniqueByFcnt.get(r.Fcnt) || 0) + 1);
+
+    for (const r of sorted) {
       if (r && typeof r.RSSI === 'number') {
         rssiSum += r.RSSI; rssiCount += 1;
       }
       if (r && typeof r.SNR === 'number') {
         snrSum += r.SNR; snrCount += 1;
       }
+      
+      if (r && r.Fcnt != null) {
+        if (prevFcnt !== null && r.Fcnt === prevFcnt) {
+          duplicatePackets++;
+        }
+        prevFcnt = r.Fcnt;
+      }
     }
-    const uniquePackets = uniqueByFcnt.size;
-    const duplicatePackets = Math.max(0, totalWithDuplicates - uniquePackets);
+
+    const uniquePackets = Math.max(0, totalWithDuplicates - duplicatePackets);
     return {
       uniquePackets,
       totalWithDuplicates,
@@ -881,7 +896,7 @@ function computeCounters(fcntRecords) {
   const fcntSpan = (fcntRecords.length >= 2) ? (lastFcnt - firstFcnt) : -1;
 
   // duplicates & segments
-  const fcntMap = new Map();
+  let duplicatePackets = 0;
   let resetCount = 0;
   let segmentStart = fcntRecords[0].Fcnt;
   let prevFcnt = fcntRecords[0].Fcnt;
@@ -889,9 +904,11 @@ function computeCounters(fcntRecords) {
 
   for (let i=0;i<fcntRecords.length;i++) {
     const f = fcntRecords[i].Fcnt;
-    fcntMap.set(f, (fcntMap.get(f)||0)+1);
     if (i===0) continue;
-    if (f < prevFcnt) { // reset
+    
+    if (f === prevFcnt) {
+      duplicatePackets++;
+    } else if (f < prevFcnt) { // reset
       // close previous segment
       expected += (prevFcnt - segmentStart + 1);
       segmentStart = f;
@@ -902,9 +919,8 @@ function computeCounters(fcntRecords) {
   // close final
   expected += (prevFcnt - segmentStart + 1);
 
-  const uniquePackets = fcntMap.size;
   const totalWithDuplicates = fcntRecords.length;
-  const duplicatePackets = totalWithDuplicates - uniquePackets;
+  const uniquePackets = Math.max(0, totalWithDuplicates - duplicatePackets);
   const lostRaw = expected - uniquePackets;
   const lost = lostRaw > 0 ? lostRaw : 0;
   const lossRate = expected === 0 ? -1 : (lost / expected) * 100;
