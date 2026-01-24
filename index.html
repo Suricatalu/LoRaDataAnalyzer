@@ -34,17 +34,22 @@
                     <div class="upload-zone" id="uploadZone">
                         <div class="upload-icon">📁</div>
                         <div class="upload-text">
-                            <div class="upload-title">Drag & Drop File</div>
-                            <div class="upload-subtitle">or click here to select a file</div>
+                            <div class="upload-title">Drag & Drop Files</div>
+                            <div class="upload-subtitle">or click here to select files (multiple allowed)</div>
                         </div>
-                        <span class="help-icon upload-help" data-tip="Upload the exported CSV data from WISE-6610 V2. The file will be parsed locally in your browser.">?</span>
+                        <span class="help-icon upload-help" data-tip="Upload the exported CSV data from WISE-6610 V2. Multiple files can be selected and will be merged. The files will be parsed locally in your browser.">?</span>
                         <div class="upload-formats">Format: .csv</div>
                     </div>
-                    <input type="file" id="csvFile" accept=".csv" hidden />
-                    <div class="file-info" id="fileInfo" style="display: none;">
-                        <div class="file-name" id="fileName"></div>
-                        <div class="file-size" id="fileSize"></div>
-                        <button class="remove-file-btn" id="removeFileBtn">✕</button>
+                    <input type="file" id="csvFile" accept=".csv" multiple hidden />
+                    <!-- 已載入檔案列表 -->
+                    <div class="loaded-files-container" id="loadedFilesContainer" style="display: none;">
+                        <div class="loaded-files-header">
+                            <span class="loaded-files-title">Loaded Files (<span id="loadedFilesCount">0</span> 個, 共 <span id="totalRecordsCount">0</span> 筆記錄)</span>
+                            <button class="clear-all-btn" id="clearAllFilesBtn" title="Clear All">Clear All</button>
+                        </div>
+                        <div class="loaded-files-list" id="loadedFilesList">
+                            <!-- 檔案項目將由 JS 動態生成 -->
+                        </div>
                     </div>
                 </div>
             </section>

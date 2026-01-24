@@ -4,7 +4,83 @@
 let rawRecords = []; 
 let currentAnalytics = null; // {perNode, global, threshold, meta}
 let currentTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone; // 使用者目前選擇（預設瀏覽器）
-let originalCsvText = null; // 保存原始 CSV 文字供時區切換重解析
+
+// ===== 多檔案管理器 (方案C) =====
+/**
+ * @typedef {Object} LoadedFile
+ * @property {string} id - 唯一識別碼
+ * @property {string} name - 檔案名稱
+ * @property {number} size - 檔案大小 (bytes)
+ * @property {string} csvText - 原始 CSV 文字
+ * @property {RawRecord[]} records - 解析後的記錄
+ * @property {number} duplicatesRemoved - 與其他檔案重複而被移除的記錄數
+ */
+let loadedFiles = []; // LoadedFile[]
+let fileIdCounter = 0; // 用於生成唯一 ID
+
+/**
+ * 生成唯一的記錄鍵值 (用於去重)
+ * @param {RawRecord} record
+ * @returns {string}
+ */
+function getRecordKey(record) {
+  const time = record.Time instanceof Date ? record.Time.getTime() : 0;
+  return `${time}-${record.Devaddr}-${record.Fcnt}`;
+}
+
+/**
+ * 合併所有已載入檔案的記錄並去重
+ * @returns {{mergedRecords: RawRecord[], duplicatesMap: Map<string, number>}}
+ */
+function mergeAllRecords() {
+  const seen = new Set();
+  const mergedRecords = [];
+  const duplicatesMap = new Map(); // fileId -> duplicates count
+  
+  // 初始化每個檔案的重複計數
+  loadedFiles.forEach(f => duplicatesMap.set(f.id, 0));
+  
+  // 按檔案載入順序處理，先載入的優先
+  for (const file of loadedFiles) {
+    for (const record of file.records) {
+      const key = getRecordKey(record);
+      if (!seen.has(key)) {
+        seen.add(key);
+        mergedRecords.push(record);
+      } else {
+        // 這筆記錄是重複的
+        duplicatesMap.set(file.id, (duplicatesMap.get(file.id) || 0) + 1);
+      }
+    }
+  }
+  
+  // 更新各檔案的重複計數
+  loadedFiles.forEach(f => {
+    f.duplicatesRemoved = duplicatesMap.get(f.id) || 0;
+  });
+  
+  // 按時間排序
+  mergedRecords.sort((a, b) => a.Time - b.Time);
+  
+  return { mergedRecords, duplicatesMap };
+}
+
+/**
+ * 重新解析所有已載入檔案 (時區切換時使用)
+ */
+function reparseAllFiles() {
+  loadedFiles.forEach(file => {
+    try {
+      file.records = parseCSVRaw(file.csvText, { timezone: currentTimezone });
+    } catch (e) {
+      console.warn(`[App] Failed to reparse file ${file.name}:`, e);
+    }
+  });
+  
+  // 重新合併
+  const { mergedRecords } = mergeAllRecords();
+  rawRecords = mergedRecords;
+}
 
 // 固定的 UTC 偏移 + 顯示名稱列表（需求指定）
 // label: 顯示, tz: IANA 時區
@@ -114,10 +190,12 @@ function populateTimezoneDropdown() {
     }
     const selectedOpt = sel.options[sel.selectedIndex];
     if (btn) btn.textContent = selectedOpt ? selectedOpt.textContent : val;
-    if (originalCsvText) {
+    // 多檔案模式：重新解析所有已載入檔案
+    if (loadedFiles.length > 0) {
       try {
-        rawRecords = parseCSVRaw(originalCsvText, { timezone: currentTimezone });
-        console.log('[App][Timezone] Re-parsed raw under new timezone:', currentTimezone, rawRecords.length);
+        reparseAllFiles();
+        renderLoadedFilesList();
+        console.log('[App][Timezone] Re-parsed all files under new timezone:', currentTimezone, rawRecords.length);
       } catch(e) { console.warn('[App][Timezone] Re-parse failed:', e); }
     }
     const startInput = document.getElementById('startDate');
@@ -876,14 +954,11 @@ function updateGapTabVisibility() {
   }
 }
 
-/** 設定拖放上傳功能 */
+/** 設定拖放上傳功能 (多檔案支援) */
 function setupDragAndDrop() {
   const uploadZone = document.getElementById('uploadZone');
   const fileInput = document.getElementById('csvFile');
-  const fileInfo = document.getElementById('fileInfo');
-  const fileName = document.getElementById('fileName');
-  const fileSize = document.getElementById('fileSize');
-  const removeBtn = document.getElementById('removeFileBtn');
+  const clearAllBtn = document.getElementById('clearAllFilesBtn');
 
   if (!uploadZone || !fileInput) return;
 
@@ -911,75 +986,144 @@ function setupDragAndDrop() {
     
     const files = e.dataTransfer.files;
     if (files.length > 0) {
-      const file = files[0];
+      // 過濾出 CSV 檔案
+      const csvFiles = Array.from(files).filter(f => f.name.toLowerCase().endsWith('.csv'));
       
-      // 檢查檔案類型
-      if (!file.name.toLowerCase().endsWith('.csv')) {
+      if (csvFiles.length === 0) {
         showUploadError('請選擇 CSV 檔案');
         return;
       }
       
-      // 設定檔案到 input 元素
-      const dt = new DataTransfer();
-      dt.items.add(file);
-      fileInput.files = dt.files;
-      
-      // 觸發檔案變更事件
-      fileInput.dispatchEvent(new Event('change', { bubbles: true }));
-      
-      // 顯示檔案資訊
-      showFileInfo(file);
+      // 處理多個檔案
+      handleMultipleFiles(csvFiles);
     }
   });
 
-  // 移除檔案按鈕
-  if (removeBtn) {
-    removeBtn.addEventListener('click', (e) => {
+  // 清除全部檔案按鈕
+  if (clearAllBtn) {
+    clearAllBtn.addEventListener('click', (e) => {
       e.stopPropagation();
-      clearFileSelection();
+      clearAllFiles();
     });
   }
 }
 
-/** 顯示檔案資訊 */
-function showFileInfo(file) {
-  const uploadZone = document.getElementById('uploadZone');
-  const fileInfo = document.getElementById('fileInfo');
-  const fileName = document.getElementById('fileName');
-  const fileSize = document.getElementById('fileSize');
-
-  if (!fileInfo || !fileName || !fileSize) return;
-
-  // 格式化檔案大小
-  const formatFileSize = (bytes) => {
-    if (bytes === 0) return '0 Bytes';
-    const k = 1024;
-    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-  };
-
-  // 更新 UI
-  fileName.textContent = file.name;
-  fileSize.textContent = formatFileSize(file.size);
-  
-  // 顯示檔案資訊，隱藏上傳區域的部分內容
-  fileInfo.style.display = 'flex';
-  uploadZone.classList.add('file-selected');
+/** 格式化檔案大小 */
+function formatFileSize(bytes) {
+  if (bytes === 0) return '0 Bytes';
+  const k = 1024;
+  const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
 }
 
-/** 清除檔案選擇 */
-function clearFileSelection() {
+/** 渲染已載入檔案列表 */
+function renderLoadedFilesList() {
+  const container = document.getElementById('loadedFilesContainer');
+  const listEl = document.getElementById('loadedFilesList');
+  const countEl = document.getElementById('loadedFilesCount');
+  const recordsEl = document.getElementById('totalRecordsCount');
+  const uploadZone = document.getElementById('uploadZone');
+  
+  if (!container || !listEl) return;
+  
+  if (loadedFiles.length === 0) {
+    container.style.display = 'none';
+    if (uploadZone) uploadZone.classList.remove('file-selected');
+    return;
+  }
+  
+  // 顯示容器
+  container.style.display = 'block';
+  if (uploadZone) uploadZone.classList.add('file-selected');
+  
+  // 更新統計
+  if (countEl) countEl.textContent = loadedFiles.length;
+  if (recordsEl) recordsEl.textContent = rawRecords.length.toLocaleString();
+  
+  // 清空並重新渲染列表
+  listEl.innerHTML = '';
+  
+  loadedFiles.forEach(file => {
+    const itemEl = document.createElement('div');
+    itemEl.className = 'loaded-file-item';
+    itemEl.dataset.fileId = file.id;
+    
+    const duplicateInfo = file.duplicatesRemoved > 0 
+      ? `<span class="duplicate-count">-${file.duplicatesRemoved} 重複</span>` 
+      : '';
+    
+    itemEl.innerHTML = `
+      <div class="loaded-file-info">
+        <span class="loaded-file-icon">📄</span>
+        <div class="loaded-file-details">
+          <span class="loaded-file-name" title="${file.name}">${file.name}</span>
+          <div class="loaded-file-meta">
+            <span class="records-count">${file.records.length.toLocaleString()} 筆</span>
+            <span class="file-size">${formatFileSize(file.size)}</span>
+            ${duplicateInfo}
+          </div>
+        </div>
+      </div>
+      <button class="remove-loaded-file-btn" title="移除此檔案">✕</button>
+    `;
+    
+    // 綁定移除按鈕事件
+    const removeBtn = itemEl.querySelector('.remove-loaded-file-btn');
+    removeBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      removeLoadedFile(file.id);
+    });
+    
+    listEl.appendChild(itemEl);
+  });
+}
+
+/** 移除單一已載入檔案 */
+function removeLoadedFile(fileId) {
+  const index = loadedFiles.findIndex(f => f.id === fileId);
+  if (index === -1) return;
+  
+  const removedFile = loadedFiles[index];
+  loadedFiles.splice(index, 1);
+  
+  console.log(`[App] Removed file: ${removedFile.name}`);
+  
+  if (loadedFiles.length === 0) {
+    // 沒有檔案了，清除所有資料
+    clearAllFiles();
+  } else {
+    // 重新合併剩餘檔案
+    const { mergedRecords } = mergeAllRecords();
+    rawRecords = mergedRecords;
+    
+    // 更新 UI
+    renderLoadedFilesList();
+    
+    // 重新分析
+    if (rawRecords.length > 0) {
+      autoFillDateRange(rawRecords);
+      rebuildAnalytics();
+    }
+  }
+}
+
+/** 清除所有已載入檔案 */
+function clearAllFiles() {
   const fileInput = document.getElementById('csvFile');
   const uploadZone = document.getElementById('uploadZone');
-  const fileInfo = document.getElementById('fileInfo');
+  const container = document.getElementById('loadedFilesContainer');
 
+  // 清除檔案列表
+  loadedFiles = [];
+  fileIdCounter = 0;
+  
   if (fileInput) {
     fileInput.value = '';
   }
   
-  if (fileInfo) {
-    fileInfo.style.display = 'none';
+  if (container) {
+    container.style.display = 'none';
   }
   
   if (uploadZone) {
@@ -1039,7 +1183,83 @@ function clearFileSelection() {
     useInactiveSince.checked = false;
   }
   
-  console.log('[App] File selection cleared, all data and statistics removed');
+  console.log('[App] All files cleared, data and statistics removed');
+}
+
+/** 處理多個檔案上傳 */
+async function handleMultipleFiles(files) {
+  if (!files || files.length === 0) return;
+  
+  showLoadingState();
+  
+  let successCount = 0;
+  let errorCount = 0;
+  const errorMessages = [];
+  
+  for (const file of files) {
+    // 檢查是否已載入相同名稱的檔案
+    const existingIndex = loadedFiles.findIndex(f => f.name === file.name);
+    if (existingIndex !== -1) {
+      // 移除舊的同名檔案
+      loadedFiles.splice(existingIndex, 1);
+      console.log(`[App] Replacing existing file: ${file.name}`);
+    }
+    
+    try {
+      const text = await file.text();
+      const records = parseCSVRaw(text, { timezone: currentTimezone });
+      
+      if (records.length === 0) {
+        errorMessages.push(`${file.name}: 無有效記錄`);
+        errorCount++;
+        continue;
+      }
+      
+      // 新增到已載入檔案列表
+      const loadedFile = {
+        id: `file-${++fileIdCounter}`,
+        name: file.name,
+        size: file.size,
+        csvText: text,
+        records: records,
+        duplicatesRemoved: 0
+      };
+      
+      loadedFiles.push(loadedFile);
+      successCount++;
+      console.log(`[App] Loaded file: ${file.name} (${records.length} records)`);
+      
+    } catch (err) {
+      console.error(`[App] Failed to parse ${file.name}:`, err);
+      errorMessages.push(`${file.name}: ${err.message || '解析失敗'}`);
+      errorCount++;
+    }
+  }
+  
+  // 合併所有記錄並去重
+  const { mergedRecords } = mergeAllRecords();
+  rawRecords = mergedRecords;
+  
+  // 更新 UI
+  renderLoadedFilesList();
+  
+  // 自動填入時間範圍
+  if (rawRecords.length > 0) {
+    autoFillDateRange(rawRecords);
+    rebuildAnalytics();
+  }
+  
+  hideLoadingState();
+  
+  // 顯示結果
+  if (errorCount > 0) {
+    console.warn('[App] Some files failed to load:', errorMessages);
+    if (successCount === 0) {
+      showUploadError(`所有檔案載入失敗:\n${errorMessages.join('\n')}`);
+    }
+  }
+  
+  console.log(`[App] File upload complete: ${successCount} success, ${errorCount} failed, ${rawRecords.length} total records`);
 }
 
 /** 顯示上傳錯誤 */
@@ -1143,51 +1363,27 @@ function refreshOverlayIfOpen() {
   } catch(e) { /* ignore */ }
 }
 
-/** 檔案選擇處理 */
+/** 檔案選擇處理 (多檔案支援) */
 async function handleFileChange(e) {
-  const file = e.target.files?.[0];
-  if (!file) {
-    clearFileSelection();
+  const files = e.target.files;
+  if (!files || files.length === 0) {
     return;
   }
   
-  // 檢查檔案類型
-  if (!file.name.toLowerCase().endsWith('.csv')) {
+  // 過濾出 CSV 檔案
+  const csvFiles = Array.from(files).filter(f => f.name.toLowerCase().endsWith('.csv'));
+  
+  if (csvFiles.length === 0) {
     showUploadError('請選擇 CSV 檔案');
     e.target.value = ''; // 清除無效檔案
     return;
   }
   
-  try {
-    showLoadingState();
-    
-    // 顯示檔案資訊
-    showFileInfo(file);
-    
-  const text = await file.text();
-  originalCsvText = text;
-  rawRecords = parseCSVRaw(text, { timezone: currentTimezone });
-  console.log('[App] Parsed records:', rawRecords.length, 'timezone:', currentTimezone);
-    
-    // 如果有資料且 checkbox 未被勾選，自動填入時間範圍
-    autoFillDateRange(rawRecords);
-    
-    rebuildAnalytics();
-    
-    // 顯示成功狀態
-    const uploadZone = document.getElementById('uploadZone');
-    if (uploadZone) {
-      uploadZone.classList.remove('upload-error');
-      uploadZone.classList.add('file-selected');
-    }
-    
-  } catch (err) {
-    console.error(err);
-    showUploadError('CSV 解析失敗: ' + (err.message || err));
-    clearFileSelection();
-  } finally {
-    hideLoadingState();
-  }
+  // 處理多個檔案
+  await handleMultipleFiles(csvFiles);
+  
+  // 清除 input 以允許重新選擇相同檔案
+  e.target.value = '';
 }
 
 /** Threshold 變動 -> 重新分類 + Chart */
@@ -1331,4 +1527,7 @@ window.getCurrentAnalytics = () => currentAnalytics;
 window.getRawRecords = () => rawRecords;
 window.updateGapTabVisibility = updateGapTabVisibility;
 window.getSelectedTimezone = getSelectedTimezone;
-window.getOriginalCsvText = () => originalCsvText;
+// 多檔案管理器相關
+window.getLoadedFiles = () => loadedFiles;
+window.removeLoadedFile = removeLoadedFile;
+window.clearAllFiles = clearAllFiles;

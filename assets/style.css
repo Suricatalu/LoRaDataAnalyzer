@@ -224,6 +224,142 @@ header {
     transform: scale(1.1);
 }
 
+/* ===== Loaded Files List (Multi-file Manager) ===== */
+.loaded-files-container {
+    margin-top: 10px;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    background: var(--bg-secondary);
+    overflow: hidden;
+    animation: slideIn 0.3s ease;
+}
+
+.loaded-files-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 12px;
+    background: var(--bg-tertiary);
+    border-bottom: 1px solid var(--border-color);
+}
+
+.loaded-files-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.loaded-files-title span {
+    color: var(--accent-primary);
+}
+
+.clear-all-btn {
+    background: transparent;
+    color: var(--danger-color);
+    border: 1px solid var(--danger-color);
+    border-radius: 4px;
+    padding: 4px 10px;
+    font-size: 11px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.clear-all-btn:hover {
+    background: var(--danger-color);
+    color: white;
+}
+
+.loaded-files-list {
+    max-height: 180px;
+    overflow-y: auto;
+}
+
+.loaded-file-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border-color);
+    transition: background 0.2s ease;
+}
+
+.loaded-file-item:last-child {
+    border-bottom: none;
+}
+
+.loaded-file-item:hover {
+    background: var(--bg-hover);
+}
+
+.loaded-file-info {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex: 1;
+    min-width: 0;
+}
+
+.loaded-file-icon {
+    font-size: 16px;
+    flex-shrink: 0;
+}
+
+.loaded-file-details {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    flex: 1;
+}
+
+.loaded-file-name {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.loaded-file-meta {
+    font-size: 11px;
+    color: var(--text-muted);
+    display: flex;
+    gap: 8px;
+}
+
+.loaded-file-meta .records-count {
+    color: var(--success-color);
+}
+
+.loaded-file-meta .file-size {
+    color: var(--text-disabled);
+}
+
+.loaded-file-meta .duplicate-count {
+    color: var(--warning-color);
+}
+
+.remove-loaded-file-btn {
+    background: transparent;
+    color: var(--text-muted);
+    border: none;
+    border-radius: 50%;
+    width: 22px;
+    height: 22px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    transition: all 0.2s ease;
+    flex-shrink: 0;
+}
+
+.remove-loaded-file-btn:hover {
+    background: var(--danger-color);
+    color: white;
+}
+
 /* Success state for upload zone */
 .upload-zone.file-selected {
     border-color: var(--success-color);
